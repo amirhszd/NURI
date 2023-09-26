@@ -1,0 +1,12 @@
+{
+  "num_panels": 2,
+
+  "black_panel": "/home/axhcis/Projects/NURI/Data/20210723_tait_labsphere_processed/SVC/210723_1701_R002_T004.sig",
+  "light_gray_panel": "/home/axhcis/Projects/NURI/Data/20210723_tait_labsphere_processed/SVC/210723_1702_R002_T008.sig",
+  "dark_gray_panel": "",
+
+  "image_file": "/home/axhcis/Projects/NURI/Data/20210723_tait_labsphere_processed/1133/swir/raw_6016_nuc_rd_or",
+  "image_hdr_file": "/home/axhcis/Projects/NURI/Data/20210723_tait_labsphere_processed/1133/swir/raw_6016_nuc_rd_or.hdr",
+
+  "output_csv_cal_file": "cal_files/"
+}

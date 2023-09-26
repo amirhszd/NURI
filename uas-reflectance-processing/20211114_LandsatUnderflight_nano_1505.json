@@ -1,0 +1,12 @@
+{
+  "num_panels": 2,
+
+  "black_panel": "/dirs/data/tirs/eon_dir/uas-processing/uas-code-handover/uas_example_data/20211114_LandsatUnderflight/SVC/211114_1625_R096_T097.sig",
+  "light_gray_panel": "/dirs/data/tirs/eon_dir/uas-processing/uas-code-handover/uas_example_data/20211114_LandsatUnderflight/SVC/211114_1625_R096_T098.sig",
+  "dark_gray_panel": "",
+
+  "image_file": "/dirs/data/tirs/eon_dir/uas-processing/uas-code-handover/uas_example_data/20211114_LandsatUnderflight/Missions/1505/nano/processed/dn_ortho/raw_22288_or",
+  "image_hdr_file": "/dirs/data/tirs/eon_dir/uas-processing/uas-code-handover/uas_example_data/20211114_LandsatUnderflight/Missions/1505/nano/processed/dn_ortho/raw_22288_or.hdr",
+
+  "output_csv_cal_file": "cal_files/"
+}
