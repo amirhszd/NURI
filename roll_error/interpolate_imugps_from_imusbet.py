@@ -43,24 +43,22 @@ def main(applanix_sbet_file, imu_gps_file):
 
     # now interpolating the nano_df to the same resolution as applanix_df based on time.
     year = int(nano_df["Gps_UTC_Date&Time"][0][:4])
-    def interp(key, method="slinear"):
+    def interp(key):
         if key == "Gps_UTC_Date&Time":
             seconds = nano_df[key].map(string_to_seconds)
-            f = interpolate.interp1d(nano_df["timestamp_seconds"].to_numpy(),
-                                     seconds.to_numpy(),
-                                     kind=method,
-                                     bounds_error = False,
-                                     fill_value=np.nan)
-            y_new = f(applanix_df["timestamp"].to_numpy())
+            y_new = np.interp(applanix_df["timestamp"].to_numpy(),
+                      nano_df["timestamp_seconds"].to_numpy(),
+                      seconds.to_numpy(),
+                      left = np.nan,
+                      right = np.nan)
             y_new = [seconds_to_string(i, year) for i in y_new]
 
         else:
-            f = interpolate.interp1d(nano_df["timestamp_seconds"].to_numpy(),
-                                     nano_df[key].to_numpy(),
-                                     kind=method,
-                                     bounds_error = False,
-                                     fill_value=np.nan)
-            y_new = f(applanix_df["timestamp"].to_numpy())
+            y_new = np.interp(applanix_df["timestamp"].to_numpy(),
+                              nano_df["timestamp_seconds"].to_numpy(),
+                              nano_df[key].to_numpy(),
+                              left=np.nan,
+                              right=np.nan)
         return y_new
 
     nano_interp_df = pd.DataFrame(None, columns = nano_df.keys())
@@ -77,37 +75,7 @@ def main(applanix_sbet_file, imu_gps_file):
 
     nano_interp_df.to_csv(imu_gps_file.replace(".txt","_slinear.txt"), index=False, sep = "\t")
 
-
-    # "CODE NOT WORKING CORRECTLY"
-    # def interp(key, method="slinear"):
-    #     if key == "Gps_UTC_Date&Time":
-    #         seconds = nano_df[key].map(string_to_seconds)
-    #         y_new = np.interp(applanix_df["timestamp"].to_numpy(),
-    #                   seconds.to_numpy(),
-    #                   nano_df["timestamp_seconds"].to_numpy(),
-    #                   left = np.nan,
-    #                   right = np.nan)
-    #         y_new = [seconds_to_string(i, year) for i in y_new]
-    #
-    #     else:
-    #         y_new = np.interp(applanix_df["timestamp"].to_numpy(),
-    #                           nano_df[key].to_numpy(),
-    #                           nano_df["timestamp_seconds"].to_numpy(),
-    #                           left=np.nan,
-    #                           right=np.nan)
-    #     return y_new
-
-
-
-
-
-
-
-
-
-
-    print("ok")
-
+    print(f'Wrote file to {imu_gps_file.replace(".txt","_slinear.txt")}')
 
 
 if __name__ == "__main__":
