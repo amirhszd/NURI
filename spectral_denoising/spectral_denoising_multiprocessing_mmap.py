@@ -343,12 +343,8 @@ class dtcwtDenoise():
 if __name__ == "__main__":
     import spectral.io.envi as envi
     import shutil
-<<<<<<< HEAD
-    hdr_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/VIS-NIR_cube/data.hdr"
-=======
     # hdr_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/VIS-NIR_cube/data.hdr"
     hdr_filename = "/Volumes/Work/Projects/NURI/DATA/uk_lab_data/VIS-NIR_cube/data.hdr"
->>>>>>> a89f4969a74be844ddda3ddb8a6367e07c5291ae
     shm_folder = os.path.join(os.path.dirname(hdr_filename), "shm")
     os.makedirs(shm_folder, exist_ok=True)
 
@@ -359,20 +355,12 @@ if __name__ == "__main__":
     denoiser = dtcwtDenoise()
     denoiser.denoise_warmup(x)
     x_denoised = denoiser.denoise(x, "kaiser", shm_folder)
-<<<<<<< HEAD
-    snr_x = denoiser.snr(x)
-    snr_x_denoised = denoiser.snr(x_denoised)
-
-    envi.save_image(hdr_filename.replace("data.hdr", "data_denoised.hdr"), x_denoised, metadata = img.metadata, force = True)
-
-=======
 
     envi.save_image(hdr_filename.replace("data.hdr", "data_denoised.hdr"), x_denoised,
                     metadata = img.metadata,
                     force = True,
                     dtype = "float32")
     print("image saved to: ", hdr_filename.replace("data.hdr", "data_denoised.hdr"))
->>>>>>> a89f4969a74be844ddda3ddb8a6367e07c5291ae
 
 
 
