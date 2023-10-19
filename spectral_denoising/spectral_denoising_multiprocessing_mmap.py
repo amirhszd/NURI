@@ -354,11 +354,14 @@ if __name__ == "__main__":
     denoiser = dtcwtDenoise()
     denoiser.denoise_warmup(x)
     x_denoised = denoiser.denoise(x, "kaiser")
-    snr_x = denoiser.snr(x)
-    snr_x_denoised = denoiser.snr(x_denoised)
+    # snr_x = denoiser.snr(x)
+    # snr_x_denoised = denoiser.snr(x_denoised)
 
-    envi.save_image(hdr_filename.replace("data.hdr", "data_denoised.hdr"), x_denoised, metadata = img.metadata, force = True)
-
+    envi.save_image(hdr_filename.replace("data.hdr", "data_denoised.hdr"), x_denoised,
+                    metadata = img.metadata,
+                    force = True,
+                    dtype = "float32")
+    print("image saved to: ", hdr_filename.replace("data.hdr", "data_denoised.hdr"))
 
 
 
