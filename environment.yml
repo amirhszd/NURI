@@ -66,9 +66,6 @@ dependencies:
   - libev=4.33
   - libexpat=2.5.0
   - libffi=3.4.2
-  - libgfortran=5.0.0
-  - libgfortran-devel_osx-64=11.4.0
-  - libgfortran5=13.2.0
   - libglib=2.78.0
   - libiconv=1.17
   - liblapack=3.9.0
