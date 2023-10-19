@@ -342,6 +342,7 @@ class dtcwtDenoise():
 if __name__ == "__main__":
     import spectral.io.envi as envi
     import shutil
+    # hdr_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/VIS-NIR_cube/data.hdr"
     hdr_filename = "/Volumes/Work/Projects/NURI/DATA/uk_lab_data/VIS-NIR_cube/data.hdr"
     # denoised_filename = hdr_filename.replace("data.hdr", "data_denoised.hdr")
     # shutil.copy(hdr_filename, denoised_filename)
