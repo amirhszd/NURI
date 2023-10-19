@@ -125,7 +125,7 @@ class dtcwtDenoise():
 
         return starts, ends
 
-    def denoise(self, x, method):
+    def denoise(self, x, method, outfolder):
         """
         Parameters:
             x = the data needed to be denoise (m,n) where m is number
@@ -214,7 +214,7 @@ class dtcwtDenoise():
         keep_pcs = x_pca_space[:, above_thresh_bool]
         denoise_pcs = x_pca_space[:, below_thresh_bool]
 
-        input_name, output_name = self.create_mmap(denoise_pcs)
+        input_name, output_name = self.create_mmap(denoise_pcs, outfolder)
         workers = multiprocessing.cpu_count()
         starts, ends = self.create_starts_ends(len(denoise_pcs), workers)
 
@@ -240,12 +240,13 @@ class dtcwtDenoise():
 
         return self.denoised_x
     @staticmethod
-    def create_mmap(array):
-        input_name = "/Volumes/Work/Projects/NURI/DATA/shm/input"
+    def create_mmap(array, foldername):
+
+        input_name = os.path.join(foldername, "input")
         input_array = np.memmap(input_name, dtype='float64', mode='w+', shape=array.shape)
         np.copyto(input_array, array)
 
-        output_name = "/Volumes/Work/Projects/NURI/DATA/shm/output"
+        output_name = os.path.join(foldername, "output")
         output_array = np.memmap(output_name, dtype='float64', mode='w+', shape=array.shape)
         np.copyto(output_array, array)
 
@@ -344,19 +345,16 @@ if __name__ == "__main__":
     import shutil
     # hdr_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/VIS-NIR_cube/data.hdr"
     hdr_filename = "/Volumes/Work/Projects/NURI/DATA/uk_lab_data/VIS-NIR_cube/data.hdr"
-    # denoised_filename = hdr_filename.replace("data.hdr", "data_denoised.hdr")
-    # shutil.copy(hdr_filename, denoised_filename)
+    shm_folder = os.path.join(os.path.dirname(hdr_filename), "shm")
+    os.makedirs(shm_folder, exist_ok=True)
 
     img  = envi.open(hdr_filename)
     arr = img.load()
-    x = arr.reshape(-1, img.shape[-1])
-
+    x = arr.reshape(-1, img.shape[-1])[:500]
 
     denoiser = dtcwtDenoise()
     denoiser.denoise_warmup(x)
-    x_denoised = denoiser.denoise(x, "kaiser")
-    # snr_x = denoiser.snr(x)
-    # snr_x_denoised = denoiser.snr(x_denoised)
+    x_denoised = denoiser.denoise(x, "kaiser", shm_folder)
 
     envi.save_image(hdr_filename.replace("data.hdr", "data_denoised.hdr"), x_denoised,
                     metadata = img.metadata,
