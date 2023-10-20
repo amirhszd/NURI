@@ -84,8 +84,9 @@ class dtcwtDenoise():
         spectrums_output = np.memmap(output_mmap, dtype='float64', mode='w+', shape=arrayshape)
         for i, spectrum in enumerate(spectrums[start:end + 1]):
             spectrums_output[start:end + 1][i] = dtcwtDenoise._denoise_dtcwt(spectrum)
-            print("\x1b[f\x1b[J" + f"{i}/{length} Done")
-
+            # print("\x1b[f\x1b[J" + f"{i}/{length} Done")
+            progress_percentage = (i + 1) / length * 100
+            print("\x1b[f\x1b[J" + f"{progress_percentage:.2f}% Done")
 
     def denoise_warmup(self, x_pca):
         """
@@ -341,26 +342,51 @@ class dtcwtDenoise():
         return k
 
 if __name__ == "__main__":
-    import spectral.io.envi as envi
-    import shutil
-    # hdr_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/VIS-NIR_cube/data.hdr"
-    hdr_filename = "/Volumes/Work/Projects/NURI/DATA/uk_lab_data/VIS-NIR_cube/data.hdr"
-    shm_folder = os.path.join(os.path.dirname(hdr_filename), "shm")
+
+    import rasterio
+
+    tif_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/VIS-NIR_cube/data.tif"
+
+    # Create a folder for shared memory (shm) if it doesn't exist
+    shm_folder = os.path.join(os.path.dirname(tif_filename), "shm")
     os.makedirs(shm_folder, exist_ok=True)
 
-    img  = envi.open(hdr_filename)
-    arr = img.load()
-    x = arr.reshape(-1, img.shape[-1])[:500]
+    # Open the ENVI header file using rasterio
+    with rasterio.open(tif_filename) as src:
+        # Read the data as a numpy array
+        arr = np.moveaxis(src.read(),0,2)
 
-    denoiser = dtcwtDenoise()
-    denoiser.denoise_warmup(x)
-    x_denoised = denoiser.denoise(x, "kaiser", shm_folder)
+        # Reshape the array if necessary (depends on your specific data format)
+        x = arr.reshape(-1, arr.shape[-1])
 
-    envi.save_image(hdr_filename.replace("data.hdr", "data_denoised.hdr"), x_denoised,
-                    metadata = img.metadata,
-                    force = True,
-                    dtype = "float32")
-    print("image saved to: ", hdr_filename.replace("data.hdr", "data_denoised.hdr"))
+        # Initialize the denoiser
+        denoiser = dtcwtDenoise()
+
+        # Perform warm-up for denoising (if needed)
+        denoiser.denoise_warmup(x)
+
+        # Apply denoising using method "kaiser" and save to x_denoised
+        x_denoised = denoiser.denoise(x, "kaiser", shm_folder)
+
+        x_denoised = np.moveaxis(x_denoised, 1, 0)
+        x_denoised = np.reshape(x_denoised, (src.count, src.shape[0], src.shape[1]))
+
+        # Create a profile for the output raster
+        profile = src.profile
+        profile.update(dtype=np.float32)
+
+        # Save the denoised data as a GeoTIFF
+        output_path = tif_filename.replace(".tif", "_denoised.tif")
+        with rasterio.open(output_path, 'w', **profile) as dst:
+            for i, band in enumerate(x_denoised):
+                dst.write_band(i + 1, band)
+
+        # set band description
+        wavelengths = list(src.descriptions)
+        os.system(f"python gdal_set_band_description.py {output_path} " + " ".join(
+            [f"{c + 1} {i}" for c, i in enumerate(wavelengths)]))
+        os.system(f"gdalinfo {output_path}")
+        print("image saved to",output_path)
 
 
 
