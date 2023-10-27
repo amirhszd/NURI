@@ -29,6 +29,9 @@ from functools import partial
 from concurrent.futures import as_completed
 import warnings
 warnings.filterwarnings("ignore")
+import rasterio
+import argparse
+import subprocess
 
 def array_splitter_rec(array, size, chunks):
 #     the base case
@@ -156,7 +159,7 @@ class dtcwtDenoise():
 
         if type(self.method) is str:
             self.method = self.method.lower()
-            if not ((self.method == 'kaiser') or (self.method == 'map')):
+            if not ((self.method == 'kaiser') or (self.method == 'c')):
                 raise ValueError("Valid methods are either MAP or Kaiser")
 
         elif type(self.method) is int:
@@ -341,11 +344,17 @@ class dtcwtDenoise():
 
         return k
 
-if __name__ == "__main__":
+def hdr2tif(hdr_filename):
+    tif_filename = hdr_filename.replace(".hdr",".tif")
+    bin_filename = hdr_filename.replace(".hdr","")
+    os.system(f"gdal_translate -of GTiff {bin_filename} {tif_filename}")
+    print("Converted binary image to TIF.")
+    return tif_filename
 
-    import rasterio
-
-    tif_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/VIS-NIR_cube/data.tif"
+def main(tif_filename, method):
+    #
+    # tif_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/VIS-NIR_cube/data.tif"
+    # method = 0.95 # map or kaiser or float
 
     # Create a folder for shared memory (shm) if it doesn't exist
     shm_folder = os.path.join(os.path.dirname(tif_filename), "shm")
@@ -366,7 +375,7 @@ if __name__ == "__main__":
         denoiser.denoise_warmup(x)
 
         # Apply denoising using method "kaiser" and save to x_denoised
-        x_denoised = denoiser.denoise(x, "kaiser", shm_folder)
+        x_denoised = denoiser.denoise(x, method, shm_folder)
 
         x_denoised = np.moveaxis(x_denoised, 1, 0)
         x_denoised = np.reshape(x_denoised, (src.count, src.shape[0], src.shape[1]))
@@ -376,20 +385,54 @@ if __name__ == "__main__":
         profile.update(dtype=np.float32)
 
         # Save the denoised data as a GeoTIFF
-        output_path = tif_filename.replace(".tif", "_denoised.tif")
+        # set band description
+        wavelengths = list(src.descriptions)
+        output_path = tif_filename.replace(".tif", f"_{method}_denoised.tif")
         with rasterio.open(output_path, 'w', **profile) as dst:
             for i, band in enumerate(x_denoised):
                 dst.write_band(i + 1, band)
+                dst.set_band_description(i + 1, wavelengths[i])
 
-        # set band description
-        wavelengths = list(src.descriptions)
-        os.system(f"python gdal_set_band_description.py {output_path} " + " ".join(
-            [f"{c + 1} {i}" for c, i in enumerate(wavelengths)]))
         os.system(f"gdalinfo {output_path}")
         print("image saved to",output_path)
+        os.rmdir(shm_folder)
 
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Denoise an image using specified method.')
+    parser.add_argument('-f','--filename', type=str, help='Path to the input image file (hdr or tif)')
+    parser.add_argument('-m','--method', help='Denoising method. Use "MAP", "Kaiser", float value between 0 and 1 '
+                                                   'for explained variablity, or int for the number of PCs to keep.')
+    args = parser.parse_args()
 
+    filename = args.filename
+    method = args.method
+    # filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/SWIR_cube/data.hdr"
+    # method = "0.95"
+
+    is_float = lambda string: True if string.replace(".", "").isnumeric() else False
+    if is_float(method):
+        if "." in method:
+            method = float(method)
+        else:
+            method = int(method)
+
+    # if method.isnumeric():
+    #     if method.isdecimal:
+    #         method = float(method)
+    #     else:
+    #         method = int(method)
+    # else:
+    #     method = str(method)
+
+    if filename.endswith(".hdr"):
+        try:
+            tif_filename = hdr2tif(filename)
+        except:
+            Exception("Failed to convert HDR to TIF.")
+        main(tif_filename, method)
+    elif filename.endswith(".tif") or filename.endswith(".TIF") or filename.endswith(".TIFF"):
+        main(filename, method)
 
 
 
