@@ -22,9 +22,10 @@ from pyproj import Proj, Transformer
 from shapely.ops import cascaded_union, unary_union
 import numpy as np
 
+column = "class"
 
 
-def mask_from_shapefile(raster_path, shape_path):
+def mask_from_shapefile(raster_path, shape_path, column):
     """
     Function generating masks from a vector file.
 
@@ -44,20 +45,36 @@ def mask_from_shapefile(raster_path, shape_path):
     # Load raster    
     with rasterio.open(raster_path, "r") as src:
         raster_meta = src.meta
+        wls = [float(i.split(" ")[0]) for i in src.descriptions]
     im_size = (raster_meta['height'], raster_meta['width'])        
     
     #load shapefile or GeoJson
     masks = []
     train_df = gpd.read_file(shape_path)
 
-    # match the crs with raster crs
-    # if train_df.crs != raster_meta["crs"]:
-    train_df = train_df.to_crs(raster_meta["crs"])
-    n_classes = int(train_df["class"].max())
-    poly_dict = {"class_" + str(class_n): [] for class_n in range(1,n_classes+1)}
+    if raster_meta["crs"] is not None:
+        train_df = train_df.to_crs(raster_meta["crs"])
+    else:
+        print("Data does not have CRS attached to it")
+        # if the transform is all posititve but the geopandas dataframe shows
+        # negative direction in the y direction
+        if raster_meta['transform'][4] > 0 and (train_df.iloc[0]["geometry"].centroid.xy[1][0] < 0):
+            from affine import Affine
+            raster_meta['transform'] = Affine(raster_meta['transform'][0],
+                                               raster_meta['transform'][1],
+                                               raster_meta['transform'][2],
+                                               raster_meta['transform'][3],
+                                               -1*raster_meta['transform'][4],
+                                               raster_meta['transform'][5])
 
-    for class_n in range(1, n_classes+1):
-        sub_df = train_df[train_df["class"] == class_n]
+
+
+    n_groups = len(np.unique(train_df[column]))
+    poly_dict = {"group_" + str(id): [] for id in np.unique(train_df[column])}
+    masks_dict = {"group_" + str(id): [] for id in np.unique(train_df[column])}
+
+    for id in np.unique(train_df[column]):
+        sub_df = train_df[train_df[column] == id]
         if sub_df.size == 0:
             raise Exception("All classes not included, double check your shapefile.")
 
@@ -65,31 +82,16 @@ def mask_from_shapefile(raster_path, shape_path):
             p = row['geometry']
             try:
                 poly = poly_from_utm(p, raster_meta['transform'])
-                poly_dict["class_" + str(class_n)].append((poly,
-                                                           row["class"]))
+                poly_dict["group_" + str(id)].append((poly,
+                                                           row[column]))
             except:
                 continue
-            # for p in row['geometry']:
-            #     poly = poly_from_utm(p, raster_meta['transform'])
-            #     poly_dict["class_" + str(class_n)].append((poly,
-            #                                                row["class"]))
             
-        mask = rasterize(shapes=poly_dict["class_" + str(class_n)], 
+        mask = rasterize(shapes=poly_dict["group_" + str(id)],
                          out_shape=im_size)
-        masks.append(np.expand_dims(mask, 0))
-    # created two layers of masks to cover overlapping areas
-    masks = np.concatenate(masks,0)
+        masks_dict["group_" + str(id)] = mask > 0
 
-    meta = src.meta.copy()
-    meta.update(count = n_classes)
-    meta.update(dtype = "uint8")
-    meta.update(nodata = 0)
-    mask_path = os.path.join(str(Path(shape_path).parent.absolute()), os.path.basename(shape_path).split(".")[0] + "_mask.tiff")
-    with rasterio.open(mask_path,
-                       'w', **meta) as dst:
-        dst.write(masks.astype(rasterio.uint8))   
-        
-    return mask_path
+    return masks_dict, wls
 
 
 def poly_from_utm(polygon, transform):
