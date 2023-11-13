@@ -11,7 +11,7 @@ from fuse_weighted_average import weighted_average
 class weighted_average_linear(weighted_average):
 
 
-    def average_linear(self, datasets, weights):
+    def weighted_linear(self, datasets, weights):
 
         # performing element wise multiplication on each of the data based on weights
         for c, data in enumerate(datasets):
@@ -39,14 +39,11 @@ class weighted_average_linear(weighted_average):
         swir_overlap_weights = vnir_overlap_weights[::-1]
 
         # performing averaging of the overlap region
-        print(f"Performing band averaging with weights linear weights.")
-        self.average_linear([swir_overlap_interp,
-                                           vnir_overlap_data], weights=[swir_overlap_weights, vnir_overlap_weights])
-
-        average_overlap_data = np.average([swir_overlap_interp,
-                                           vnir_overlap_data],
-                                           axis = 0,
-                                           weights= (vnir_overlap_weights, swir_overlap_weights))
+        print(f"Performing linear weighted summation of swir and vnir.")
+        average_overlap_data = self.weighted_linear([swir_overlap_interp,
+                                                    vnir_overlap_data],
+                                                    weights=[swir_overlap_weights,
+                                                             vnir_overlap_weights])
 
         # setting the default vnir and swir values for places we dont have swir or vnir
         average_overlap_data[swir_overlap_interp == 0] = vnir_overlap_data[swir_overlap_interp == 0]
@@ -94,6 +91,6 @@ class weighted_average_linear(weighted_average):
 if __name__ == "__main__":
     vnir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_10_56_30_VNIR/data.tif"
     swir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_11_15_28_SWIR/data_warped.tif"
-    output_path = "/Volumes/Work/Projects/NURI/NURI/spectral_matching/weighted_average/fused_data_linear.tif"
+    output_path = "/Volumes/Work/Projects/NURI/NURI/spectral_matching/weighted_average/fused_data_linear_vnir_denoised.tif"
     averager = weighted_average_linear(vnir_path,swir_path, output_path)
 
