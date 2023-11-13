@@ -395,7 +395,8 @@ def main(tif_filename, method):
 
         os.system(f"gdalinfo {output_path}")
         print("image saved to",output_path)
-        os.rmdir(shm_folder)
+        import shutil
+        shutil.rmtree(shm_folder)
 
 
 if __name__ == '__main__':
