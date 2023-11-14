@@ -152,12 +152,17 @@ class weighted_average():
         with rasterio.open(output_path, 'w', **vnir_profile) as dst:
             for i, band in enumerate(vnir_swir_fused_data):
                 dst.write_band(i + 1, band)
-                dst.set_band_description(i + 1, str(vnir_swir_fused_wavelengths[i]) + " nm")
+
+        from gdal_set_band_description import set_band_descriptions
+        bands = [int(i) for i in range(1, len(vnir_swir_fused_wavelengths) + 1)]
+        names = vnir_swir_fused_wavelengths.astype(str)
+        band_desciptions = zip(bands, names)
+        set_band_descriptions(output_path, band_desciptions)
         print("Fused Image Saved to " + output_path)
 
 
 if __name__ == "__main__":
     vnir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_10_56_30_VNIR/data.tif"
-    swir_path = "/Volumes/Work/Projects/NURI/NURI/spectral_matching/weighted_average/data_warped.tif"
+    swir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_11_15_28_SWIR/data_warped.tif"
     output_path = "/Volumes/Work/Projects/NURI/NURI/spectral_matching/weighted_average/fused_data.tif"
     averager = weighted_average(vnir_path,swir_path, output_path)

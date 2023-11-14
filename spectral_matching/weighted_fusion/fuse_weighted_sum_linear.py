@@ -83,9 +83,13 @@ class weighted_average_linear(weighted_average):
         with rasterio.open(output_path, 'w', **vnir_profile) as dst:
             for i, band in enumerate(vnir_swir_fused_data):
                 dst.write_band(i + 1, band)
-                dst.set_band_description(i + 1, str(vnir_swir_fused_wavelengths[i]) + " nm")
-        print("Fused Image Saved to " + output_path)
 
+        from gdal_set_band_description import set_band_descriptions
+        bands = [int(i) for i in range(1, len(vnir_swir_fused_wavelengths) + 1)]
+        names = vnir_swir_fused_wavelengths.astype(str)
+        band_desciptions = zip(bands, names)
+        set_band_descriptions(output_path, band_desciptions)
+        print("Fused Image Saved to " + output_path)
 
 
 if __name__ == "__main__":
