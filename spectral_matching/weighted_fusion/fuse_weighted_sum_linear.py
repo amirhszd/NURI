@@ -93,8 +93,8 @@ class weighted_average_linear(weighted_average):
 
 
 if __name__ == "__main__":
-    vnir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_10_56_30_VNIR/data.tif"
+    vnir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/data_vnir_0.99_denoised.tif"
     swir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_11_15_28_SWIR/data_warped.tif"
-    output_path = "/Volumes/Work/Projects/NURI/NURI/spectral_matching/weighted_average/fused_data_linear_vnir_denoised.tif"
+    output_path = "/Volumes/Work/Projects/NURI/NURI/spectral_matching/weighted_fusion/fused_data_linear_vnir_denoised.tif"
     averager = weighted_average_linear(vnir_path,swir_path, output_path)
 

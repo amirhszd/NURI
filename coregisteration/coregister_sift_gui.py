@@ -147,7 +147,12 @@ def main(vnir_path,swir_path):
         with rasterio.open(output_path, 'w', **vnir_profile) as dst:
             for i, band in enumerate(swir_registered_bands):
                 dst.write_band(i + 1, band)
-                dst.set_band_description(i + 1, str(swir_wavelengths[i]) + " nm")
+
+        from gdal_set_band_description import set_band_descriptions
+        bands = [int(i) for i in range(1, len(swir_wavelengths) + 1)]
+        names = swir_wavelengths.astype(str)
+        band_desciptions = zip(bands, names)
+        set_band_descriptions(output_path, band_desciptions)
 
         print("Registered Image Saved to " + output_path)
         sys.exit()
