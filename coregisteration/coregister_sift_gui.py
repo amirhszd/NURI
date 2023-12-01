@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import rasterio
 import matplotlib.pyplot as plt
+from image_utils import load_images_envi, save_image_envi
 from matplotlib.widgets import Slider, Button
 import sys
 
@@ -10,20 +11,6 @@ import sys
 #     matched_image = cv2.drawMatches(image1, keypoints1, image2, keypoints2, matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 #     plt.imshow(matched_image)
 #     plt.show()
-
-
-def load_images(vnir_path, swir_path):
-    with rasterio.open(vnir_path) as src:
-        vnir_arr = src.read()
-        vnir_profile = src.profile
-        vnir_wavelengths = np.array([float(i.split(" ")[0]) for i in src.descriptions])
-    with rasterio.open(swir_path) as src:
-        swir_arr = src.read()
-        swir_profile = src.profile
-        swir_wavelengths = np.array([float(i.split(" ")[0]) for i in src.descriptions])
-
-    return (vnir_arr, vnir_profile, vnir_wavelengths), (swir_arr, swir_profile, swir_wavelengths)
-
 
 def init_figs():
     # Add sliders
@@ -40,21 +27,18 @@ def init_figs():
     window_size_slider_ax = fig.add_axes([0.3, 0.09, 0.4, 0.02])
     window_size_slider = Slider(window_size_slider_ax, 'Window Size (nm)', 6, 60, valinit=25)
 
-    save_button_ax = fig.add_axes([0.4, 0.15, 0.1, 0.06])
-    save_button = Button(save_button_ax, 'Save Image')
-
-    return fig, ax1, ax2, descriptor_threshold_slider, ransac_threshold_slider, window_size_slider, save_button
+    return fig, ax1, ax2, descriptor_threshold_slider, ransac_threshold_slider, window_size_slider
 
 def main(vnir_path,swir_path):
     global M
     M = None
 
     # initialize the figuer
-    fig, ax1, ax2, descriptor_threshold_slider, ransac_threshold_slider, window_size_slider, save_button = init_figs()
+    fig, ax1, ax2, descriptor_threshold_slider, ransac_threshold_slider, window_size_slider = init_figs()
 
     # load images
     (vnir_arr, vnir_profile, vnir_wavelengths),\
-        (swir_arr, swir_profile, swir_wavelengths) = load_images(vnir_path, swir_path)
+        (swir_arr, swir_profile, swir_wavelengths) = load_images_envi(vnir_path, swir_path)
 
     def update(val):
         global M
@@ -123,49 +107,33 @@ def main(vnir_path,swir_path):
         ax2.set_title('Overlay of Coregistered Image')
         fig.canvas.draw_idle()
 
+        def on_key(event):
+            global not_satisfied
+            if event.key == 'escape':  # Close figure if Escape key is pressed
+                not_satisfied = False;
+                plt.close(fig)
+
+        plt.suptitle('When satisfied press ESCAPE to save image.')
+        fig.canvas.mpl_connect('key_press_event', on_key)
+
 
     # Attach the update function to sliders
     descriptor_threshold_slider.on_changed(update)
     ransac_threshold_slider.on_changed(update)
     window_size_slider.on_changed(update)
 
-    # Attach the save_image function to the button
-    def save_image(val):
-        global M
-        # Apply transformation to swir_image
-        print(M)
-        swir_registered_bands = []
-        for i in range(len(swir_wavelengths)):
-            swir_registered_bands.append(
-                cv2.warpPerspective(np.fliplr(swir_arr[i]), M, (vnir_arr.shape[2], vnir_arr.shape[1])))
-
-        # save data
-        # output_path = swir_path.replace(".tif", "_warped.tif")
-        import os
-        output_path = os.path.basename(swir_path.replace(".tif", "_warped.tif"))
-        vnir_profile.update(count=len(swir_registered_bands))
-        with rasterio.open(output_path, 'w', **vnir_profile) as dst:
-            for i, band in enumerate(swir_registered_bands):
-                dst.write_band(i + 1, band)
-
-        from gdal_set_band_description import set_band_descriptions
-        bands = [int(i) for i in range(1, len(swir_wavelengths) + 1)]
-        names = swir_wavelengths.astype(str)
-        band_desciptions = zip(bands, names)
-        set_band_descriptions(output_path, band_desciptions)
-
-        print("Registered Image Saved to " + output_path)
-        sys.exit()
-
-    save_button.on_clicked(save_image)
-
     # Initial visualization
     update(None)
-
     plt.show()
 
+    save_image_envi(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profile, M)
+
+
+
 if __name__ == "__main__":
-    vnir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_10_56_30_VNIR/data.tif"
-    swir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_11_15_28_SWIR/data.tif"
+    # vnir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_10_56_30_VNIR/data.tif"
+    # swir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_11_15_28_SWIR/data.tif"
+    vnir_path = "/Users/amirhassanzadeh/Downloads/data_vnir.hdr"
+    swir_path = "/Users/amirhassanzadeh/Downloads/data_swir.hdr"
     main(vnir_path,swir_path)
 
