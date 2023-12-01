@@ -1,0 +1,7 @@
+# Coregistration
+
+WORK IN PROGRESS.
+this package is used for lab data VNIR and SWIR registration. It contains two modules:
+
+* Automatic coregistration: this could be used when both VNIR and SWIR data have visible enough features in them. SIFT identifies the tie points.
+* Manual coregistration: this could be used in whether there is small or large number of features available. The user identifies the tie points.
