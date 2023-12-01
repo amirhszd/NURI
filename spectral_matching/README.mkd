@@ -1,0 +1,6 @@
+# Spectral Jump Correction
+
+Implemented the approach for correcting the jump between vnir and swir: Hueni, A. and Bialek, A. (2017). "Cause, Effect and Correction of Field Spectroradiometer Inter-channel Radiometric Steps." IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing 10(4): 1542-1551.
+The approach takes advantage of coefficients derived from putting the device in the chamber, and correcting the noise level for it. This would not be beneficial to our objective.
+
+* matlab code (`spectral_jump_correction/ASD_Jump_Correction.m`)

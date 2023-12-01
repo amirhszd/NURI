@@ -1,0 +1,6 @@
+# Spectral Denoising
+
+WORK IN PROGRESS.
+the package is used for performing denoising. The modules created so far are:
+
+* PCA spectral denoising (`spectral_denoising/spectral_denoising_multiprocessing_mmap.py`): using PCA approach and multiprocessing to perform denoising.
