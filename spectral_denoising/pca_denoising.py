@@ -5,7 +5,7 @@ Created on Sat Mar  7 17:40:15 2020
 @author: Amirh
 """
 import multiprocessing
-
+from image_utils import *
 import matplotlib.pyplot as plt
 import numpy as np
 import pickle
@@ -351,64 +351,46 @@ def hdr2tif(hdr_filename):
     print("Converted binary image to TIF.")
     return tif_filename
 
-def main(tif_filename, method):
-    #
-    # tif_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/VIS-NIR_cube/data.tif"
-    # method = 0.95 # map or kaiser or float
+# def main(tif_filename, method):
+def main(hdr_filename, method):
 
-    # Create a folder for shared memory (shm) if it doesn't exist
-    shm_folder = os.path.join(os.path.dirname(tif_filename), "shm")
+    shm_folder = os.path.join(os.path.dirname(hdr_filename), "shm")
     os.makedirs(shm_folder, exist_ok=True)
 
-    # Open the ENVI header file using rasterio
-    with rasterio.open(tif_filename) as src:
-        # Read the data as a numpy array
-        arr = np.moveaxis(src.read(),0,2)
+    arr, profile, wavelengths = load_image_envi(hdr_filename)
 
-        # Reshape the array if necessary (depends on your specific data format)
-        x = arr.reshape(-1, arr.shape[-1])
+    # Reshape the array if necessary (depends on your specific data format)
+    x = arr.reshape(-1, arr.shape[-1])
 
-        # Initialize the denoiser
-        denoiser = dtcwtDenoise()
+    # Initialize the denoiser
+    denoiser = dtcwtDenoise()
 
-        # Perform warm-up for denoising (if needed)
-        denoiser.denoise_warmup(x)
+    # Perform warm-up for denoising (if needed)
+    denoiser.denoise_warmup(x)
 
-        # Apply denoising using method "kaiser" and save to x_denoised
-        x_denoised = denoiser.denoise(x, method, shm_folder)
+    # Apply denoising using method "kaiser" and save to x_denoised
+    x_denoised = denoiser.denoise(x, method, shm_folder)
+    x_denoised = np.reshape(x_denoised,
+                            (int(profile["lines"]),
+                             int(profile["samples"]),
+                             len(wavelengths)))
 
-        x_denoised = np.moveaxis(x_denoised, 1, 0)
-        x_denoised = np.reshape(x_denoised, (src.count, src.shape[0], src.shape[1]))
-
-        # Create a profile for the output raster
-        profile = src.profile
-        profile.update(dtype=np.float32)
-
-        # Save the denoised data as a GeoTIFF
-        # set band description
-        wavelengths = list(src.descriptions)
-        output_path = tif_filename.replace(".tif", f"_{method}_denoised.tif")
-        with rasterio.open(output_path, 'w', **profile) as dst:
-            for i, band in enumerate(x_denoised):
-                dst.write_band(i + 1, band)
-                dst.set_band_description(i + 1, wavelengths[i])
-
-        os.system(f"gdalinfo {output_path}")
-        print("image saved to",output_path)
-        import shutil
-        shutil.rmtree(shm_folder)
+    output_path = hdr_filename.replace(".hdr", f"_{method}_denoised.hdr")
+    save_image_envi(x_denoised, output_path, profile)
+    import shutil
+    shutil.rmtree(shm_folder)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Denoise an image using specified method.')
-    parser.add_argument('-f','--filename', type=str, help='Path to the input image file (hdr or tif)')
+    # parser.add_argument('-f','--filename', type=str, help='Path to the input image file (hdr or tif)')
+    parser.add_argument('-f', '--filename', type=str, help='Path to the input Envi image hear ')
     parser.add_argument('-m','--method', help='Denoising method. Use "MAP", "Kaiser", float value between 0 and 1 '
                                                    'for explained variablity, or int for the number of PCs to keep.')
     args = parser.parse_args()
-
     filename = args.filename
     method = args.method
-    # filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/UK_lab_data/SWIR_cube/data.hdr"
+    # filename = "/Users/amirhassanzadeh/Downloads/data_swir.hdr"
     # method = "0.95"
 
     is_float = lambda string: True if string.replace(".", "").isnumeric() else False
@@ -418,24 +400,7 @@ if __name__ == '__main__':
         else:
             method = int(method)
 
-    # if method.isnumeric():
-    #     if method.isdecimal:
-    #         method = float(method)
-    #     else:
-    #         method = int(method)
-    # else:
-    #     method = str(method)
-
-    if filename.endswith(".hdr"):
-        try:
-            tif_filename = hdr2tif(filename)
-        except:
-            Exception("Failed to convert HDR to TIF.")
-        main(tif_filename, method)
-    elif filename.endswith(".tif") or filename.endswith(".TIF") or filename.endswith(".TIFF"):
-        main(filename, method)
-
-
+    main(filename, method)
 
 
 

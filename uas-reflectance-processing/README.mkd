@@ -1,0 +1,4 @@
+# UAS reflectance processing
+
+WORK IN PROGRESS
+basic functionality code to read and calibrate drone data.

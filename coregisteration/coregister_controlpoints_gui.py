@@ -1,9 +1,7 @@
 import cv2
 import numpy as np
-import rasterio
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider, Button
-import sys
+from image_utils import load_images_envi, save_image_envi
 
 # def visualize_matches(image1, keypoints1, image2, keypoints2, matches):
 #     # Draw matches on a new image
@@ -11,18 +9,6 @@ import sys
 #     plt.imshow(matched_image)
 #     plt.show()
 
-
-def load_images(vnir_path, swir_path):
-    with rasterio.open(vnir_path) as src:
-        vnir_arr = src.read()
-        vnir_profile = src.profile
-        vnir_wavelengths = np.array([float(i.split(" ")[0]) for i in src.descriptions])
-    with rasterio.open(swir_path) as src:
-        swir_arr = src.read()
-        swir_profile = src.profile
-        swir_wavelengths = np.array([float(i.split(" ")[0]) for i in src.descriptions])
-
-    return (vnir_arr, vnir_profile, vnir_wavelengths), (swir_arr, swir_profile, swir_wavelengths)
 
 
 def init_figs(vnir_arr,
@@ -66,32 +52,13 @@ def init_figs(vnir_arr,
     return fig, ax1, ax2, vnir_image, vnir_image_uint8, swir_image, swir_image_uint8
 
 
-def save_image(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profile, M):
-    swir_registered_bands = []
-    for i in range(len(swir_wavelengths)):
-        swir_registered_bands.append(
-            cv2.warpPerspective(np.fliplr(swir_arr[i]), M, (vnir_arr.shape[2], vnir_arr.shape[1])))
-
-    # save data
-    import os
-    # output_path = swir_path.replace(".tif", "_warped.tif")
-    output_path = os.path.basename(swir_path.replace(".tif", "_warped.tif"))
-    vnir_profile.update(count=len(swir_registered_bands))
-    with rasterio.open(output_path, 'w', **vnir_profile) as dst:
-        for i, band in enumerate(swir_registered_bands):
-            dst.write_band(i + 1, band)
-            dst.set_band_description(i + 1, str(swir_wavelengths[i]) + " nm")
-
-    print("Registered Image Saved to " + output_path)
-    sys.exit()
-
-
 def main(vnir_path,swir_path):
     global not_satisfied
 
-    # load images
+    # load images envi
     (vnir_arr, vnir_profile, vnir_wavelengths),\
-        (swir_arr, swir_profile, swir_wavelengths) = load_images(vnir_path, swir_path)
+        (swir_arr, swir_profile, swir_wavelengths) = load_images_envi(vnir_path, swir_path)
+
 
     not_satisfied = True
     while not_satisfied:
@@ -146,10 +113,12 @@ def main(vnir_path,swir_path):
         plt.show()
 
     # save image at last
-    save_image(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profile, M)
+    save_image_envi(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profile, M)
 
 if __name__ == "__main__":
-    vnir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_10_56_30_VNIR/data.tif"
-    swir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_11_15_28_SWIR/data.tif"
+    # vnir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_10_56_30_VNIR/data.tif"
+    # swir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_11_15_28_SWIR/data.tif"
+    vnir_path = "/Users/amirhassanzadeh/Downloads/data_vnir.hdr"
+    swir_path = "/Users/amirhassanzadeh/Downloads/data_swir.hdr"
     main(vnir_path,swir_path)
 

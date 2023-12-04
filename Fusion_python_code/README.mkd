@@ -1,0 +1,7 @@
+# FUSION Code
+
+WORK IN PROGRESS, incomplete.
+this package is used for lab VNIR and SWIR spectral fusion.
+
+* the codes in this pacakge needs MTF calculation for each sensor, this could be done using a line detection approach. this would put the pieces together.
+* the documnetation is pretty thorough, one can read and tell what is happening.
