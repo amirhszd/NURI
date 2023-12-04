@@ -1,17 +1,4 @@
-# Spectral Matching
+# UAS reflectance processing
 
 WORK IN PROGRESS
-Performing spectral matching via different approach. So far what have been done are:
-
-*optimization_radiance*
-attemp to replicate the experiment in for spectral fusion in the radiometric sense: Grillini, F., Thomas, J. B., & George, S. (2021, November). Radiometric spectral fusion of VNIR and SWIR hyperspectral cameras. In Color and Imaging Conference (Vol. 29, pp. 276-281). Society for Imaging Science and Technology.
-
-*optimization_reflectance*
-Finding coefficients to match the two spectra based on the available reflectance spectrum of known pucks!
-* `spectral_matching/optimization_reflectance/fuse_coefficients_linear.py`: VNIR-SWIR fusing by calculating coefficients for a linear transformation in the overlap, going from SWIR to vnir.
-
-
-*weighted_fusion*
-VNIR-SWIR fusion using either:
-* weighted average
-* assigning weights in a linear fashion between SWIR and VNIR: the left most wavelength in VNIR is the most reliable but the least reliable in SWIR, the right most wavelength is the least reliable in VNIR but most in SWIR. using this to set weights between 0-1 and summing the two signals together.
+basic functionality code to read and calibrate drone data.

@@ -1,6 +1,17 @@
-# Spectral Jump Correction
+# Spectral Matching
 
-Implemented the approach for correcting the jump between vnir and swir: Hueni, A. and Bialek, A. (2017). "Cause, Effect and Correction of Field Spectroradiometer Inter-channel Radiometric Steps." IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing 10(4): 1542-1551.
-The approach takes advantage of coefficients derived from putting the device in the chamber, and correcting the noise level for it. This would not be beneficial to our objective.
+WORK IN PROGRESS
+Performing spectral matching via different approach. So far what have been done are:
 
-* matlab code (`spectral_jump_correction/ASD_Jump_Correction.m`)
+*optimization_radiance*
+attemp to replicate the experiment in for spectral fusion in the radiometric sense: Grillini, F., Thomas, J. B., & George, S. (2021, November). Radiometric spectral fusion of VNIR and SWIR hyperspectral cameras. In Color and Imaging Conference (Vol. 29, pp. 276-281). Society for Imaging Science and Technology.
+
+*optimization_reflectance*
+Finding coefficients to match the two spectra based on the available reflectance spectrum of known pucks!
+* `spectral_matching/optimization_reflectance/fuse_coefficients_linear.py`: VNIR-SWIR fusing by calculating coefficients for a linear transformation in the overlap, going from SWIR to vnir.
+
+
+*weighted_fusion*
+VNIR-SWIR fusion using either:
+* weighted average
+* assigning weights in a linear fashion between SWIR and VNIR: the left most wavelength in VNIR is the most reliable but the least reliable in SWIR, the right most wavelength is the least reliable in VNIR but most in SWIR. using this to set weights between 0-1 and summing the two signals together.

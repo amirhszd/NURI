@@ -137,14 +137,14 @@ def main(vnir_mat_path, swir_mat_path):
     ax[3].set_xlabel("Wavelength (nm)")
     ax[3].set_ylabel("Intercept")
 
-    plt.savefig("optimization_results.pdf")
+    plt.savefig("opt_results_linear.pdf")
 
     saving_dict = {}
     for c, wl in enumerate(swir_data_interp["wl"]):
         saving_dict[wl] = list(coeffs_per_band[c])
 
     import json
-    with open("coeffs.json", "w") as file:
+    with open("coeffs_linear.json", "w") as file:
         json.dump(saving_dict, file)
 
 

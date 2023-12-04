@@ -1,13 +1,6 @@
-# Roll Error Adjustment
+# Spectral Denoising
 
-WORK IN PROGRESS, incomplete.
-this package is used for compensating for the roll error.
+WORK IN PROGRESS.
+the package is used for performing denoising. The modules created so far are:
 
-* so far the scripts developed are for reading the GPS of the IMU and interpolating. more need to be done
-
-TO-DO:
-* using Micasense and hyperspectral data; perform image registration per adaptive window size (ADWIN; Adwin was suggested by bartek )
-* dissimilarity metrics are calculated from one line to another, comparing these disimilarity metrices help us understand the size of the window (small window sizes, more change; large window sizes, less change)
-* image registration can be done automatically from Micasense to hyperspectral data
-
-* one alternative approach would be to lay a line target in the field to detect
+* PCA spectral denoising (`spectral_denoising/pca_denoising.py`): using PCA approach and multiprocessing to perform denoising.

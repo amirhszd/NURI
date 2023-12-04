@@ -81,7 +81,7 @@ def save_image_envi(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profil
     metadata["bands"] = str(len(swir_wavelengths))
     metadata["wavelength"] = [str(i) for i in swir_wavelengths]
 
-    swir_arr = np.transpose(swir_arr, [1,2,0])
-    envi.save_image(swir_path.replace(".hdr", "_warped.hdr"), swir_arr, metadata=metadata, force=True)
+    swir_registered_bands = np.transpose(swir_registered_bands, [1,2,0])
+    envi.save_image(swir_path.replace(".hdr", "_warped.hdr"), swir_registered_bands, metadata=metadata, force=True)
 
     print("image saved to: " + swir_path.replace(".hdr", "_warped.hdr"))

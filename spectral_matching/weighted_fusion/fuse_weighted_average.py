@@ -6,6 +6,7 @@ import os
 import rasterio
 from scipy.interpolate import interp1d
 import os
+from spectral.io import envi
 
 
 class weighted_average():
@@ -26,6 +27,35 @@ class weighted_average():
 
         return (vnir_arr, vnir_profile, vnir_wavelengths), (swir_arr, swir_profile, swir_wavelengths)
 
+    def load_images_envi(self, vnir_path, swir_path,):
+        vnir_ds = envi.open(vnir_path)
+        vnir_profile = vnir_ds.metadata
+        vnir_wavelengths = vnir_profile["wavelength"]
+        vnir_wavelengths = np.array([float(i) for i in vnir_wavelengths])
+        vnir_arr = np.transpose(vnir_ds.load(), [2, 0, 1])
+
+        swir_ds = envi.open(swir_path)
+        swir_profile = swir_ds.metadata
+        swir_wavelengths = swir_profile["wavelength"]
+        swir_wavelengths = np.array([float(i) for i in swir_wavelengths])
+        swir_arr = np.transpose(swir_ds.load(), [2, 0, 1])
+
+        return (vnir_arr, vnir_profile, vnir_wavelengths), (swir_arr, swir_profile, swir_wavelengths)
+
+    def save_image_envi(self, swir_arr, swir_wavelengths, swir_path, vnir_profile):
+
+        # replicating vnir metadata except the bands and wavelength
+        metadata = {}
+        for k, v in vnir_profile.items():
+            if (k != "bands") or (k != "wavelength"):
+                metadata[k] = vnir_profile[k]
+        metadata["bands"] = str(len(swir_wavelengths))
+        metadata["wavelength"] = [str(i) for i in swir_wavelengths]
+
+        swir_arr = np.transpose(swir_arr, [1,2,0])
+        envi.save_image(swir_path, swir_arr, metadata=metadata, force=True)
+
+        print("image saved to: " + swir_path)
 
     def interpolate_swir_to_vnir(self, swir_arr,
                                  swir_wavelengths,
@@ -126,7 +156,7 @@ class weighted_average():
 
         # load images
         (vnir_arr, vnir_profile, vnir_wavelengths), \
-            (swir_arr, swir_profile, swir_wavelengths) = self.load_images(vnir_path, swir_path)
+            (swir_arr, swir_profile, swir_wavelengths) = self.load_images_envi(vnir_path, swir_path)
 
 
         # band average
@@ -148,21 +178,11 @@ class weighted_average():
                   swir_wavelengths)
 
         # save out the data
-        vnir_profile.update(count=len(vnir_swir_fused_wavelengths))
-        with rasterio.open(output_path, 'w', **vnir_profile) as dst:
-            for i, band in enumerate(vnir_swir_fused_data):
-                dst.write_band(i + 1, band)
-
-        from gdal_set_band_description import set_band_descriptions
-        bands = [int(i) for i in range(1, len(vnir_swir_fused_wavelengths) + 1)]
-        names = vnir_swir_fused_wavelengths.astype(str)
-        band_desciptions = zip(bands, names)
-        set_band_descriptions(output_path, band_desciptions)
-        print("Fused Image Saved to " + output_path)
+        self.save_image_envi(vnir_swir_fused_data, vnir_swir_fused_wavelengths, output_path, vnir_profile)
 
 
 if __name__ == "__main__":
-    vnir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_10_56_30_VNIR/data.tif"
-    swir_path = "/Volumes/T7/axhcis/Projects/NURI/data/uk_lab_data/cal_test/2023_10_12_11_15_28_SWIR/data_warped.tif"
-    output_path = "/Volumes/Work/Projects/NURI/NURI/spectral_matching/weighted_average/fused_data.tif"
+    vnir_path = "/Users/amirhassanzadeh/Downloads/data_vnir.hdr"
+    swir_path = "/Users/amirhassanzadeh/Downloads/data_swir_warped.hdr"
+    output_path = os.path.join("/Volumes/T7/axhcis", "vnir_swir_fused_weightedsum.hdr")
     averager = weighted_average(vnir_path,swir_path, output_path)

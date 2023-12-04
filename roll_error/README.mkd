@@ -1,7 +1,13 @@
-# FUSION Code
+# Roll Error Adjustment
 
 WORK IN PROGRESS, incomplete.
-this package is used for lab VNIR and SWIR spectral fusion.
+this package is used for compensating for the roll error.
 
-* the codes in this pacakge needs MTF calculation for each sensor, this could be done using a line detection approach. this would put the pieces together.
-* the documnetation is pretty thorough, one can read and tell what is happening.
+* so far the scripts developed are for reading the GPS of the IMU and interpolating. more need to be done
+
+TO-DO:
+* using Micasense and hyperspectral data; perform image registration per adaptive window size (ADWIN; Adwin was suggested by bartek )
+* dissimilarity metrics are calculated from one line to another, comparing these disimilarity metrices help us understand the size of the window (small window sizes, more change; large window sizes, less change)
+* image registration can be done automatically from Micasense to hyperspectral data
+
+* one alternative approach would be to lay a line target in the field to detect
