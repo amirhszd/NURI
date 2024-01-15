@@ -19,23 +19,20 @@ def load_images(vnir_path, swir_path):
 
 
 
-def load_images_envi(vnir_path, swir_path):
+def load_images_envi(mica_path, swir_path):
 
-    vnir_ds = envi.open(vnir_path)
-    vnir_profile = vnir_ds.metadata
-    vnir_wavelengths = vnir_profile["wavelength"]
-    vnir_wavelengths = np.array([float(i) for i in vnir_wavelengths])
-    vnir_arr = np.transpose(vnir_ds.load(), [2,0,1])
+    mica_ds = envi.open(mica_path)
+    mica_profile = mica_ds.metadata
+    mica_wavelengths = [475,560,634,668,717]
+    mica_arr = mica_ds.load()
 
     swir_ds = envi.open(swir_path)
     swir_profile = swir_ds.metadata
     swir_wavelengths = swir_profile["wavelength"]
     swir_wavelengths = np.array([float(i) for i in swir_wavelengths])
-    swir_arr = np.transpose(swir_ds.load(), [2,0,1])
+    swir_arr = swir_ds.load()
 
-    return (vnir_arr, vnir_profile, vnir_wavelengths), (swir_arr, swir_profile, swir_wavelengths)
-
-
+    return (mica_arr, mica_profile, mica_wavelengths ), (swir_arr, swir_profile, swir_wavelengths)
 
 
 def save_image(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profile, M):
@@ -63,15 +60,33 @@ def save_image(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profile, M)
     print("Registered Image Saved to " + output_path)
     sys.exit()
 
-def save_image_envi(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profile, M):
+def save_crop_image_envi(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profile, M):
 
+    # a sample warped band to get the extents of the image
+    sample_warped_band = cv2.warpPerspective(swir_arr[..., 0], M, (vnir_arr.shape[1], vnir_arr.shape[0]))[..., None]
+
+    # Extract non-zero data extents
+    non_zero_indices = np.nonzero(sample_warped_band)
+    xmin, xmax = min(non_zero_indices[1]), max(non_zero_indices[1])
+    ymin, ymax = min(non_zero_indices[0]), max(non_zero_indices[0])
+
+    # creating lat and lon rasters and then cropping them accordingly
+    lon_values = np.linspace(float(vnir_profile["map info"][3]),
+                             float(vnir_profile["map info"][3]) + (int(vnir_profile["samples"])) * float(vnir_profile["map info"][5]),
+                             int(vnir_profile["samples"]))
+    lat_values = np.linspace(float(vnir_profile["map info"][4]),
+                             float(vnir_profile["map info"][4]) - (int(vnir_profile["lines"])) * float(vnir_profile["map info"][6]),
+                             int(vnir_profile["lines"]))
+    lon_raster, lat_raster = np.meshgrid(lon_values, lat_values)
+    lon_raster_crop = lon_raster[ymin:ymax+1, xmin:xmax+1]
+    lat_raster_crop = lat_raster[ymin:ymax+1, xmin:xmax+1]
+    del lon_raster, lat_raster
+
+    # warping and cropping the data to the extents
     swir_registered_bands = []
     for i in range(len(swir_wavelengths)):
         swir_registered_bands.append(
-            cv2.warpPerspective(np.fliplr(swir_arr[i]), M, (vnir_arr.shape[2], vnir_arr.shape[1])))
-
-
-    par_dir = os.path.dirname(swir_path)
+            cv2.warpPerspective(swir_arr[...,i], M, (vnir_arr.shape[1], vnir_arr.shape[0]))[ymin:ymax+1, xmin:xmax+1, None])
 
     # replicating vnir metadata except the bands and wavelength
     metadata = {}
@@ -80,9 +95,11 @@ def save_image_envi(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_profil
             metadata[k] = vnir_profile[k]
     metadata["bands"] = str(len(swir_wavelengths))
     metadata["wavelength"] = [str(i) for i in swir_wavelengths]
+    metadata["map info"][3] = lon_raster_crop.min()
+    metadata["map info"][4] = lat_raster_crop.max()
     metadata["description"] = swir_path.replace(".hdr", "_warped.hdr")
 
-    swir_registered_bands = np.transpose(swir_registered_bands, [1,2,0])
+    swir_registered_bands = np.concatenate(swir_registered_bands, 2)
     envi.save_image(swir_path.replace(".hdr", "_warped.hdr"), swir_registered_bands, metadata=metadata, force=True)
 
     print("image saved to: " + swir_path.replace(".hdr", "_warped.hdr"))

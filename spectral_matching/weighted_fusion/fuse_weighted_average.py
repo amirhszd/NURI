@@ -51,6 +51,7 @@ class weighted_average():
                 metadata[k] = vnir_profile[k]
         metadata["bands"] = str(len(swir_wavelengths))
         metadata["wavelength"] = [str(i) for i in swir_wavelengths]
+        metadata["description"] = swir_path
 
         swir_arr = np.transpose(swir_arr, [1,2,0])
         envi.save_image(swir_path, swir_arr, metadata=metadata, force=True)

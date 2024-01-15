@@ -20,6 +20,7 @@ def save_image_envi(new_arr, new_path, old_profile):
     metadata["bands"] = str(int(old_profile["bands"]) + 2)
     old_profile["wavelength"].extend(["2510.24123456", "2512.24123456"])
     metadata["wavelength"] = old_profile["wavelength"]
+    metadata["description"] = new_path
 
     # # channels are last for envi, first in rasterio
     envi.save_image(new_path, new_arr, metadata=metadata, force=True,
