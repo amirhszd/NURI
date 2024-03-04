@@ -29,7 +29,15 @@ def main():
 
     # grab the rows two bands
     waterfall_rows = vnir_arr[..., -2].squeeze()
-    rep_band = (minmax_scale(vnir_arr[..., 80].squeeze()) * 255).astype(np.uint8)
+    to_uint8 = lambda x: ((x - x.min()) / (x.max() - x.min()) * 255).astype(np.uint8)
+    vnir_img = vnir_arr[..., np.array([10, 40, 90])]
+    rep_band = to_uint8(vnir_img)
+
+
+
+
+
+    # rep_band = (minmax_scale(vnir_arr[..., np.array([120, 80, 40])].squeeze()) * 255).astype(np.uint8)
 
     del vnir_arr
 
@@ -98,7 +106,9 @@ def main():
         axd["histx_orig"].set_ylabel("X histogram")
         axd["histy_orig"].set_ylabel("Y histogram")
 
-        mx_col = ma.masked_array(rep_band, waterfall_rows == rows_unique[c])
+        import copy
+        mx_col = copy.copy(rep_band)
+        mx_col[waterfall_rows == rows_unique[c]] = 255
         axd["left"].set_title(f"col = {rows_unique[c]}")
         im3.set_data(mx_col)
 

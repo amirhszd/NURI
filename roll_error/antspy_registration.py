@@ -24,7 +24,7 @@ import ants
 def load_image_envi(waterfall_path):
     vnir_ds = envi.open(waterfall_path)
     vnir_profile = vnir_ds.metadata
-    vnir_arr = vnir_ds.load()
+    vnir_arr = np.array(vnir_ds.load())
 
     return vnir_arr, vnir_profile
 
@@ -90,7 +90,7 @@ def get_transform(fixed, moving):
 
 def main(swir_hdr, mica_hdr):
 
-    # load the SWIR image and select band 38
+    # load the SWIR and mica
     swir_arr, swir_profile= load_image_envi(swir_hdr)
     mica_arr, mica_profile = load_image_envi(mica_hdr)
 
@@ -125,10 +125,6 @@ def main(swir_hdr, mica_hdr):
         swir_rgb_bands_warped.append(ants.apply_transforms(fixed=mica_image_uint8_ants, moving=swir_band_ants,
                                                        transformlist=mytx['fwdtransforms']).numpy()[...,None])
     swir_rgb_bands_warped = np.concatenate(swir_rgb_bands_warped,2)
-
-
-
-
 
     # performing correllation coefficient between the two to pick the highest
     highest_corr_ind, highest_corr = get_highest_corr_coeff(swir_patch, mica_patch)

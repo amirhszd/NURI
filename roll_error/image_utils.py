@@ -86,7 +86,7 @@ def save_crop_image_envi(swir_arr, swir_wavelengths, swir_path, vnir_arr, vnir_p
     swir_registered_bands = []
     for i in range(len(swir_wavelengths)):
         swir_registered_bands.append(
-            cv2.warpPerspective(swir_arr[...,i], M, (vnir_arr.shape[1], vnir_arr.shape[0]))[ymin:ymax+1, xmin:xmax+1, None])
+            cv2.warpPerspective(swir_arr[...,i], M, (vnir_arr.shape[1], vnir_arr.shape[0]), flags= cv2.INTER_NEAREST)[ymin:ymax+1, xmin:xmax+1, None])
 
     # replicating vnir metadata except the bands and wavelength
     metadata = {}

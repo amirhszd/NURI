@@ -142,10 +142,12 @@ if __name__ == "__main__":
     IMPORORTANT: I AM PASSING FINDING THE HIGHLY CORRELLATED BAND OVER A SMALL AREA OF THE IMAGE, INSTEAD OF THE ENTIRE
     THING, BE USEFUL TO JUST DO IT IN ANOTHER FASHION?
     
+    This code is now doing neares neighbour interpolation!
+    
     """
 
 
     mica_path = "/Volumes/T7/axhcis/Projects/NURI/data/20210723_tait_labsphere/1133/Micasense/NURI_micasense_1133_transparent_mosaic_stacked_warped.hdr"
     swir_path = "/Volumes/T7/axhcis/Projects/NURI/data/20210723_tait_labsphere/1133/SWIR/raw_1504_nuc_or_plusindices3.hdr"
-    main(mica_path,swir_path, False)
+    main(mica_path,swir_path, True)
 

@@ -61,7 +61,7 @@ class weighted_average_linear(weighted_average):
 
 
         # band average
-        # swir_arr_interp is the array witht the overlap part interpolated to VNIR
+        # swir_arr_interp is the array with the overlap part interpolated to VNIR
         swir_overlap_interp, swir_overlap_interp_wavelengths = self.interpolate_swir_to_vnir(swir_arr, swir_wavelengths, vnir_wavelengths)
 
 

@@ -63,6 +63,8 @@ def get_row_outliers(waterfall_rows, rows_unique, threshold_pixels = 30):
 
     return outliers_x, outliers_y
 
+
+
 def get_col_outliers(waterfall_cols, cols_unique, threshold_perc = 0.75):
     # FINDING BIZZARE PIXELS IN THE COLUMN DIRECTION
     outliers_x_cols = []
