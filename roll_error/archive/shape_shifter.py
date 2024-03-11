@@ -1,27 +1,8 @@
 import copy
-from scipy.signal import medfilt2d
 from spectral.io import envi
 import numpy as np
-import numpy.ma as ma
-import os
-import matplotlib.pyplot as plt
 import time
-from sklearn.preprocessing import minmax_scale
-import matplotlib.cm as cm
-import matplotlib.widgets as widgets
-from scipy import interpolate
-import pyelastix
-from dipy.align.imwarp import SymmetricDiffeomorphicRegistration
-from dipy.align.metrics import SSDMetric, CCMetric
-import dipy.align.imwarp as imwarp
-from dipy.data import get_fnames
-from dipy.io.image import load_nifti_data
-from dipy.segment.mask import median_otsu
-from dipy.viz import regtools
-from scipy.ndimage import gaussian_filter
-import matplotlib
 from scipy.stats import pearsonr
-import ants
 from sklearn.linear_model import LinearRegression, RANSACRegressor
 from skimage.metrics import normalized_mutual_information
 from scipy.interpolate import griddata
@@ -34,7 +15,32 @@ from matplotlib.path import Path
 from scipy.ndimage import binary_dilation
 from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
 import multiprocessing
+from osgeo import gdal
+import os
+import subprocess
+import matplotlib.pyplot as plt
 
+def warp_to_scale(input_filename, size = 0.5, method = None):
+
+    if method == None:
+        method = "bilinear"
+    else:
+        method = "near"
+
+    src = gdal.Open(input_filename)
+    width_new = int(src.RasterXSize * size)
+    height_new = int(src.RasterYSize * size)
+
+
+    output_filename = input_filename.split(".")[0] + f"_{size}.img"
+    command = f"gdalwarp -overwrite -ts {width_new} {height_new} -r {method} -of ENVI " + "'" + input_filename + "'" + " '" + output_filename + "'"
+    output = subprocess.call(command, shell= True)
+    if output == 0:
+        print(f"{input_filename} warped to {size} size: {output_filename}")
+    else:
+        print(f"Error occured warping to {size} size: {input_filename}")
+
+    return output_filename
 
 def load_image_envi(waterfall_path):
     vnir_ds = envi.open(waterfall_path)
@@ -42,18 +48,6 @@ def load_image_envi(waterfall_path):
     vnir_arr = np.array(vnir_ds.load())
 
     return vnir_arr, vnir_profile
-
-def callback_CC(sdr, status):
-    # Status indicates at which stage of the optimization we currently are
-    # For now, we will only react at the end of each resolution of the scale
-    # space
-    if status == imwarp.RegistrationStages.SCALE_END:
-        # get the current images from the metric
-        wmoving = sdr.metric.moving_image
-        wstatic = sdr.metric.static_image
-        # draw the images on top of each other with different colors
-        regtools.overlay_images(wmoving, wstatic, 'Warped moving', 'Overlay',
-                                'Warped static')
 
 
 def get_highest_corr_coeff(swir_patch, mica_patch):
@@ -72,36 +66,6 @@ def get_highest_corr_coeff(swir_patch, mica_patch):
     highest_corr = correllation_arr[highest_corr_ind]
 
     return list(highest_corr_ind), highest_corr
-
-def create_patch_indices(array1):
-    while True:
-        # Generate random 150x150 patch indices
-        rand_x = np.random.randint(0, array1.shape[1] - 200)
-        patch_x_indices = np.arange(rand_x, rand_x + 200)
-
-        rand_y = np.random.randint(0, array1.shape[0] - 200)
-        patch_y_indices = np.arange(rand_y, rand_y + 200)
-
-        yy, xx = np.meshgrid(patch_y_indices, patch_x_indices)
-
-        # Check if there are no zeros in the corresponding positions of array1
-        if np.all(array1[yy, xx, 0] != 0):
-            break  # Break the loop if condition is satisfied
-
-    return [yy, xx]
-
-def apply_transform(fixed, moving, transform):
-
-    regis_bands = []
-    for i in range(moving.shape[-1]):
-        regis_bands.append(ants.apply_transforms(fixed=fixed, moving=moving,
-                                              transformlist=transform['fwdtransforms'])[...,None])
-    regis_bands = np.concatenate(regis_bands, 2)
-    return regis_bands
-
-def get_transform(fixed, moving):
-    transform = ants.registration(fixed=fixed, moving=moving, type_of_transform='Elastic')
-    return transform
 
 def get_mask_from_convex_hull(image, y_new, x_new):
 
@@ -190,11 +154,14 @@ def replace_nan_values(image, min_row, max_row, min_col, max_col, y_new, x_new, 
     if len(image.shape) == 3:
         start = time.time()
         interpolated_values = np.zeros_like(image)
-        with ProcessPoolExecutor() as executor:
-            futures = [executor.submit(interpolate_image, image, valid_mask, method, i) for i in range(image.shape[2])]
-            for future in as_completed(futures):
-                index, values = future.result()
-                interpolated_values[...,index] = values
+        # with ProcessPoolExecutor() as executor:
+        #     futures = [executor.submit(interpolate_image, image, valid_mask, method, i) for i in range(image.shape[2])]
+        #     for future in as_completed(futures):
+        #         index, values = future.result()
+        #         interpolated_values[...,index] = values
+        for i in range(image.shape[2]):
+            index, values = interpolate_image(image, valid_mask, method, i)
+            interpolated_values[...,index] = values
         print(f"total time: {time.time() - start}")
 
     else:
@@ -216,7 +183,7 @@ def to_uint8(x):
 def shift_rows_from_model(hs_image_copy, model, x_old, y_old, min_row, max_row, min_col, max_col, n, method = "nearest"):
 
     pixel_values = hs_image_copy[y_old, x_old]
-    # hs_image_copy[y_old, x_old] = np.nan
+    hs_image_copy[y_old, x_old] = np.nan
 
     # lets get residuals from old values
     y_old_model = model.predict(x_old.reshape(-1, 1))
@@ -225,7 +192,7 @@ def shift_rows_from_model(hs_image_copy, model, x_old, y_old, min_row, max_row, 
     # and adding that residual to the points
     x_new = x_old.reshape(-1, 1) + n
     y_new_model = model.predict(x_new)
-    y_new = np.round(y_new_model - y_res).astype(int)
+    y_new = (y_new_model - y_res).astype(int)
 
     if len(y_new) < 10:
         return None, None, None
@@ -241,8 +208,8 @@ def shift_rows_from_model(hs_image_copy, model, x_old, y_old, min_row, max_row, 
         hs_image_copy[y_new, x_new.squeeze()] = pixel_values
 
     # # perform a quick interpolation over nan values for swir
-    # hs_image_copy[min_row:max_row + 1, min_col:max_col + 1] = replace_nan_values(hs_image_copy, min_row, max_row, min_col,
-    #                                                                              max_col, y_new, x_new, method)
+    hs_image_copy[min_row:max_row + 1, min_col:max_col + 1] = replace_nan_values(hs_image_copy, min_row, max_row, min_col,
+                                                                                 max_col, y_new, x_new, method)
 
     return hs_image_copy, x_new, y_new
 
@@ -259,11 +226,10 @@ def calculate_mi(hs_image_copy,
     mica_patch = mica_image[min_row:max_row + 1, min_col:max_col + 1]
     mica_patch = to_uint8(mica_patch).astype(int)
     mi = normalized_mutual_information(hs_patch, mica_patch)
-    # mi = np.correlate(hs_patch.flatten(), mica_patch.flatten())[0]
     return mi
 
-def save_image_envi(new_hs_arr, old_hs_profile, hs_hdr_path):
-    hs_hdr_path_new = hs_hdr_path.replace(".hdr", "_ss.hdr")
+def save_image_envi(new_hs_arr, old_hs_profile, hs_hdr_path, method):
+    hs_hdr_path_new = hs_hdr_path.replace(".hdr", f"_ss_{method}.hdr")
 
     # replicating vnir metadata except the bands and wavelength
     old_hs_profile["description"] = hs_hdr_path_new
@@ -330,76 +296,11 @@ def get_shift_from_mi(hs_image,
     else:
         return None, np.nan, np.nan
 
-def main(hs_hdr, mica_hdr, method = "nearest", hs_type = "swir", ):
-
-    # load the hyperspectral and mica
-    hs_arr, hs_profile = load_image_envi(hs_hdr)
-    # hs_arr = hs_arr[...,:5]
-    mica_arr, mica_profile = load_image_envi(mica_hdr)
-    waterfall_rows = hs_arr[..., -2].squeeze()
-    hs_arr_copy = copy.copy(hs_arr)
-
-    # grab a patch to calculate the highest coefficient bands
-    if hs_type == "swir":
-        hs_bands = np.arange(0,12)
-    elif hs_type == "vnir":
-        #TODO: define what bands vnir is
-        hs_bands = np.arange(0, 12)
-
-    # grabbing the correspondiong image
-    hs_image = np.mean(hs_arr[..., hs_bands], axis=2)
-    mica_image = mica_arr[..., -1].squeeze() # grabbing the last band in mica
-
-    # setting up lists to save out the linear models for each row and the shift amount
-    quality_metrics = []
-
-    rows_values = np.arange(1, np.max(waterfall_rows) + 1)
-    pbar = tqdm(total = np.max(waterfall_rows), position=0, leave=True)
-    rows_values = rows_values[850:900]
-    for row_value in rows_values:
-
-        y_old, x_old = np.where(waterfall_rows == row_value)
-        mask_bool = waterfall_rows == row_value
-        rows, cols = np.where(mask_bool)
-        min_row, min_col = np.min(rows), np.min(cols)
-        max_row, max_col = np.max(rows), np.max(cols)
-
-        linear_model, shift, quality_metric = get_shift_from_mi(hs_image,
-                                                                mica_image,
-                                                                y_old, x_old,
-                                                                min_row, max_row,
-                                                                min_col, max_col,
-                                                                3,
-                                                                method)
-        quality_metrics.append(quality_metric)
-
-        if linear_model is None:
-            continue
-
-        # suggested method at this stage is cubic
-        hs_arr_copy, _, _ = shift_rows_from_model(hs_arr_copy,
-                                                  linear_model,
-                                                  x_old,
-                                                  y_old,
-                                                  min_row,
-                                                  max_row,
-                                                  min_col,
-                                                  max_col,
-                                                  shift,
-                                                  method)
-
-        pbar.update(1)
-
-    print(f"Overall relative improvement: {np.nansum(quality_metrics):.5f}.")
-    save_image_envi(hs_arr, hs_profile, hs_hdr)
-
-
-def main_debug(hs_filename, mica_filename, method = "nearest", hs_type = "swir", ):
+def main(hs_filename, mica_filename, method = "nearest", hs_type = "swir", ):
 
     # # downsample both mica
     # hs_filename = warp_to_scale(hs_filename, 0.5 )
     # mica_filename =warp_to_scale(mica_filename, 0.5 )
-    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
 
     # load the hyperspectral and mica
     hs_arr, hs_profile = load_image_envi(hs_filename)
@@ -407,7 +308,6 @@ def main_debug(hs_filename, mica_filename, method = "nearest", hs_type = "swir",
     mica_arr, mica_profile = load_image_envi(mica_filename)
     waterfall_rows = hs_arr[..., -2].squeeze()
     hs_arr_copy = copy.copy(hs_arr)
-    hs_arr_copy = np.mean(hs_arr_copy[..., np.arange(0,12)], axis=2)
 
     # grab a patch to calculate the highest coefficient bands
     if hs_type == "swir":
@@ -423,16 +323,9 @@ def main_debug(hs_filename, mica_filename, method = "nearest", hs_type = "swir",
     # setting up lists to save out the linear models for each row and the shift amount
     quality_metrics = []
 
-    axs[0].imshow(hs_arr_copy, cmap='gray')
-    axs[0].set_title('Original')
-    im = axs[1].imshow(hs_arr_copy, cmap='gray')
-    axs[1].set_title('Modified')
-    axs[2].imshow(mica_image, cmap='gray')
-    axs[2].set_title('Original')
-
     rows_values = np.arange(1, np.max(waterfall_rows) + 1)
     pbar = tqdm(total = np.max(waterfall_rows), position=0, leave=True)
-    # rows_values = rows_values[800:1200]
+
     for row_value in rows_values:
 
         y_old, x_old = np.where(waterfall_rows == row_value)
@@ -464,16 +357,76 @@ def main_debug(hs_filename, mica_filename, method = "nearest", hs_type = "swir",
                                                   max_col,
                                                   shift,
                                                   method)
-        # plt.pause(0.5)
 
         pbar.update(1)
-    hs_arr_copy = medfilt2d(hs_arr_copy, kernel_size=3)
-    im.set_data(hs_arr_copy)
 
     print(f"Overall relative improvement: {np.nansum(quality_metrics):.5f}.")
-    plt.show()
     save_image_envi(hs_arr, hs_profile, hs_filename, method)
 
+
+
+def main_debug(hs_filename, mica_filename, method = "nearest", hs_type = "swir"):
+
+    # # downsample both mica
+    # load the hyperspectral and mica
+    hs_arr, hs_profile = load_image_envi(hs_filename)
+    # hs_arr = hs_arr[...,:5]
+    mica_arr, mica_profile = load_image_envi(mica_filename)
+    waterfall_rows = hs_arr[..., -2].squeeze()
+    hs_arr_copy = copy.copy(hs_arr)
+    hs_arr_copy = np.mean(hs_arr_copy[..., np.arange(0,12)], axis=2)
+    hs_arr_view = copy.copy(hs_arr_copy)
+
+    # grab a patch to calculate the highest coefficient bands
+    if hs_type == "swir":
+        hs_bands = np.arange(0,12)
+    elif hs_type == "vnir":
+        #TODO: define what bands vnir is
+        hs_bands = np.arange(0, 12)
+
+    # grabbing the correspondiong image
+    hs_image = np.mean(hs_arr[..., hs_bands], axis=2)
+    mica_image = mica_arr[..., -1].squeeze() # grabbing the last band in mica
+
+    # setting up lists to save out the linear models for each row and the shift amount
+    quality_metrics = []
+    rows_values = np.arange(1, np.max(waterfall_rows) + 1)
+    pbar = tqdm(total = np.max(waterfall_rows), position=0, leave=True)
+    for row_value in rows_values:
+
+        y_old, x_old = np.where(waterfall_rows == row_value)
+        mask_bool = waterfall_rows == row_value
+        rows, cols = np.where(mask_bool)
+        min_row, min_col = np.min(rows), np.min(cols)
+        max_row, max_col = np.max(rows), np.max(cols)
+
+        linear_model, shift, quality_metric = get_shift_from_mi(hs_image,
+                                                                mica_image,
+                                                                y_old, x_old,
+                                                                min_row, max_row,
+                                                                min_col, max_col,
+                                                                method)
+        quality_metrics.append(quality_metric)
+
+        if linear_model is None:
+            continue
+
+        # suggested method at this stage is cubic
+        hs_arr_copy, _, _ = shift_rows_from_model(hs_arr_copy,
+                                                  linear_model,
+                                                  x_old,
+                                                  y_old,
+                                                  min_row,
+                                                  max_row,
+                                                  min_col,
+                                                  max_col,
+                                                  shift,
+                                                  method)
+        pbar.update(1)
+
+    print(f"Overall relative improvement: {np.nansum(quality_metrics):.5f}.")
+
+    save_image_envi(hs_arr, hs_profile, hs_filename, method)
 
 
 if __name__ == "__main__":
@@ -485,8 +438,8 @@ if __name__ == "__main__":
     # todo: maybe 3 pixels left and right is not doing much
 
 
-    mica_hdr = "/Volumes/T7/axhcis/Projects/NURI/data/20210723_tait_labsphere/1133/Micasense/NURI_micasense_1133_transparent_mosaic_stacked_warped_cropped.hdr"
-    swir_hdr = "/Volumes/T7/axhcis/Projects/NURI/data/20210723_tait_labsphere/1133/SWIR/raw_1504_nuc_or_plusindices3_warped.hdr"
-    main_debug(swir_hdr, mica_hdr, method = "nearest")
+    mica_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/labspehre_data/1133/Micasense/NURI_micasense_1133_transparent_mosaic_stacked_warped_cropped.hdr"
+    swir_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/labspehre_data/1133/SWIR/raw_1504_nuc_or_plusindices3_warped.hdr"
+    main_debug(swir_filename, mica_filename, method = "nearest")
 
 

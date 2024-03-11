@@ -1,81 +1,84 @@
 import copy
 from spectral.io import envi
 import numpy as np
+import matplotlib.pyplot as plt
 import time
-from scipy.stats import pearsonr
 from sklearn.linear_model import LinearRegression, RANSACRegressor
 from skimage.metrics import normalized_mutual_information
 from scipy.interpolate import griddata
 from tqdm import tqdm
 from sklearn.decomposition import PCA
 from skimage.draw import polygon
-from scipy.interpolate import RectBivariateSpline
 from scipy.spatial import ConvexHull
 from matplotlib.path import Path
 from scipy.ndimage import binary_dilation
-from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
-import multiprocessing
-from osgeo import gdal
-import os
-import subprocess
-import matplotlib.pyplot as plt
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import argparse
+from scipy.signal import medfilt2d
 
-def warp_to_scale(input_filename, size = 0.5, method = None):
-
-    if method == None:
-        method = "bilinear"
-    else:
-        method = "near"
-
-    src = gdal.Open(input_filename)
-    width_new = int(src.RasterXSize * size)
-    height_new = int(src.RasterYSize * size)
-
-
-    output_filename = input_filename.split(".")[0] + f"_{size}.img"
-    command = f"gdalwarp -overwrite -ts {width_new} {height_new} -r {method} -of ENVI " + "'" + input_filename + "'" + " '" + output_filename + "'"
-    output = subprocess.call(command, shell= True)
-    if output == 0:
-        print(f"{input_filename} warped to {size} size: {output_filename}")
-    else:
-        print(f"Error occured warping to {size} size: {input_filename}")
-
-    return output_filename
 
 def load_image_envi(waterfall_path):
-    vnir_ds = envi.open(waterfall_path)
-    vnir_profile = vnir_ds.metadata
-    vnir_arr = np.array(vnir_ds.load())
+    """
+    Load an image from an ENVI file.
 
+    Parameters:
+    - waterfall_path (str): Path to the ENVI file.
+
+    Returns:
+    - vnir_arr (numpy.ndarray): Loaded image data as a NumPy array.
+    - vnir_profile (dict): Metadata/profile of the ENVI file.
+    """
+    vnir_ds = envi.open(waterfall_path)  # Open the ENVI file
+    vnir_profile = vnir_ds.metadata  # Extract metadata
+    vnir_arr = np.array(vnir_ds.load())  # Load image data into a NumPy array
     return vnir_arr, vnir_profile
 
 
-def get_highest_corr_coeff(swir_patch, mica_patch):
+def save_image_envi(new_hs_arr, old_hs_profile, hs_hdr_path, dtype=None):
+    """
+    Save a hyperspectral image to an ENVI file.
 
-    correllation_arr = np.zeros((swir_patch.shape[-1], mica_patch.shape[-1]))
+    Parameters:
+    - new_hs_arr (numpy.ndarray): New hyperspectral image data.
+    - old_hs_profile (dict): Metadata/profile of the original hyperspectral image.
+    - hs_hdr_path (str): Path to save the ENVI file.
+    - dtype (dtype, optional): Data type of the image data.
 
-    # Loop through each band in SWIR and Mica
-    for i in range(swir_patch.shape[2]):  # Assuming the number of bands is in the third dimension
-        for j in range(mica_patch.shape[2]):  # Assuming the number of bands is in the third dimension
-            # Calculate correlation coefficient using sampled data
-            correlation, _ = pearsonr(swir_patch[...,i].flatten(), mica_patch[...,j].flatten())
-            correllation_arr[i,j] = correlation
+    Returns:
+    - None
+    """
+    # Update the description in the metadata
+    old_hs_profile["description"] = hs_hdr_path
 
+    # Save the new hyperspectral image to the ENVI file
+    envi.save_image(hs_hdr_path, new_hs_arr, metadata=old_hs_profile, force=True, dtype=dtype)
 
-    highest_corr_ind = np.unravel_index(np.argmax(correllation_arr), correllation_arr.shape)
-    highest_corr = correllation_arr[highest_corr_ind]
-
-    return list(highest_corr_ind), highest_corr
+    # Print a message indicating the successful saving of the image
+    print("Image saved to:", hs_hdr_path)
 
 def get_mask_from_convex_hull(image, y_new, x_new):
+    """
+    Generate a mask based on convex hull from given image and new points.
+
+    Parameters:
+    - image (numpy.ndarray): Image data.
+    - y_new (array-like): Y-coordinates of new points.
+    - x_new (array-like): X-coordinates of new points.
+
+    Returns:
+    - mask (numpy.ndarray): Binary mask indicating points within the convex hull.
+    """
 
     if len(image.shape) == 3:
+        # Find NaN indices in case of a multi-channel image
         nan_indices = np.where(np.isnan(image[...,0]))
         image_shape = image.shape[:2]
     else:
+        # Find NaN indices for a single-channel image
         nan_indices = np.where(np.isnan(image))
         image_shape = image.shape
 
+    # Exclude new points from the NaN indices
     points_old = zip(nan_indices[0],nan_indices[1])
     points_new = zip(y_new, x_new)
     points_final = [i for i in points_old if i not in points_new]
@@ -85,8 +88,10 @@ def get_mask_from_convex_hull(image, y_new, x_new):
     y_final, x_final = np.array(y_final).squeeze(), np.array(x_final).squeeze()
     points_arr = np.concatenate([np.array(x_final)[..., None], np.array(y_final)[..., None]], 1)
 
+    # Compute convex hull
     hull = ConvexHull(points_arr)
 
+    # Get points within the convex hull
     points_within_hull = points_arr[hull.vertices]
 
     # Create a path from the points within the hull
@@ -99,16 +104,27 @@ def get_mask_from_convex_hull(image, y_new, x_new):
     # Check which points are within the convex hull
     mask = path.contains_points(points).reshape(image_shape)
 
-    # dilate a mask a little bit
+    # Dilate the mask slightly
     mask = binary_dilation(mask, iterations=5)
 
     if len(image.shape) == 3:
+        # If the image is multi-channel, extend the mask to cover all channels
         mask = np.tile(mask[..., None], image.shape[2])
 
     return mask
 
 def get_mask_from_row(y_new, x_new, swir_image_copy):
+    """
+    Generate a mask based on row projection from given points.
 
+    Parameters:
+    - y_new (array-like): Y-coordinates of new points.
+    - x_new (array-like): X-coordinates of new points.
+    - swir_image_copy (numpy.ndarray): Copy of the SWIR image.
+
+    Returns:
+    - mask (numpy.ndarray): Binary mask indicating the row projection.
+    """
     mask = np.zeros_like(swir_image_copy)
     pca = PCA()  # Number of principal components to keep
     data = np.vstack((y_new, x_new.squeeze())).T
@@ -129,187 +145,166 @@ def get_mask_from_row(y_new, x_new, swir_image_copy):
 
     return mask
 
-def interpolate_image(image, valid_mask, method, i):
-    rows, cols, channels = np.indices(image.shape)
-    points = np.column_stack((cols[valid_mask], rows[valid_mask]))
-    indices = np.where(valid_mask)
-    values = image[indices[0], indices[1], i]
-    grid_x, grid_y = np.meshgrid(np.arange(image.shape[1]), np.arange(image.shape[0]))
-    return i, griddata(points, values, (grid_x, grid_y), method=method)
-
-def replace_nan_values(image, min_row, max_row, min_col, max_col, y_new, x_new, method="nearest"):
-
-    # Get boolean mask representing the convex hull around new indices
-    row_bool_mask = get_mask_from_convex_hull(image, y_new, x_new)
-
-    # Crop masks and image to specified region
-    row_bool_mask = row_bool_mask[min_row:max_row+1, min_col:max_col+1]
-    image = image[min_row:max_row+1, min_col:max_col+1]
-
-    # Create masks for NaN values and valid points within the convex hull
-    nan_mask = np.isnan(image)
-    valid_mask = (row_bool_mask) & (~nan_mask)
-
-    # Generate coordinates and values for valid points
-    if len(image.shape) == 3:
-        start = time.time()
-        interpolated_values = np.zeros_like(image)
-        # with ProcessPoolExecutor() as executor:
-        #     futures = [executor.submit(interpolate_image, image, valid_mask, method, i) for i in range(image.shape[2])]
-        #     for future in as_completed(futures):
-        #         index, values = future.result()
-        #         interpolated_values[...,index] = values
-        for i in range(image.shape[2]):
-            index, values = interpolate_image(image, valid_mask, method, i)
-            interpolated_values[...,index] = values
-        print(f"total time: {time.time() - start}")
-
-    else:
-        rows, cols = np.indices(image.shape)
-        points = np.column_stack((cols[valid_mask], rows[valid_mask]))
-        values = image[valid_mask]
-        grid_x, grid_y = np.meshgrid(np.arange(image.shape[1]), np.arange(image.shape[0]))
-        interpolated_values = griddata(points, values, (grid_x, grid_y), method=method)
-
-    # Replace NaN values with interpolated values
-    interpolated_image = np.where(nan_mask, interpolated_values, image)
-
-    return interpolated_image
-
-
 def to_uint8(x):
     return ((x - np.min(x[np.nonzero(x)])) / (np.max(x[np.nonzero(x)]) - np.min(x[np.nonzero(x)])) * 255).astype(np.uint8)
+def shift_rows_from_model(hs_image_copy, model, x_old, y_old, n, quality_raster=None):
+    """
+    Shift rows of a hyperspectral image based on a linear regression model.
 
-def shift_rows_from_model(hs_image_copy, model, x_old, y_old, min_row, max_row, min_col, max_col, n, method = "nearest"):
+    Parameters:
+    - hs_image_copy (numpy.ndarray): Copy of the original hyperspectral image.
+    - model (sklearn.linear_model): Trained linear regression model.
+    - x_old (array-like): Old x-coordinates of points to be shifted.
+    - y_old (array-like): Old y-coordinates of points to be shifted.
+    - n (int): Number of pixels to shift.
+    - quality_raster (numpy.ndarray, optional): Quality raster for storing shift quality metrics.
 
+    Returns:
+    - hs_image_copy (numpy.ndarray): Shifted hyperspectral image.
+    - x_new (numpy.ndarray): New x-coordinates of shifted points.
+    - y_new (numpy.ndarray): New y-coordinates of shifted points.
+    - quality_raster (numpy.ndarray): Updated quality raster.
+    """
     pixel_values = hs_image_copy[y_old, x_old]
-    hs_image_copy[y_old, x_old] = np.nan
 
-    # lets get residuals from old values
+    # Get residuals from old values
     y_old_model = model.predict(x_old.reshape(-1, 1))
     y_res = y_old_model - y_old
 
-    # and adding that residual to the points
+    # Add residuals to the points to calculate new coordinates
     x_new = x_old.reshape(-1, 1) + n
     y_new_model = model.predict(x_new)
-    y_new = (y_new_model - y_res).astype(int)
+    y_new = np.round(y_new_model - y_res).astype(int)
 
     if len(y_new) < 10:
-        return None, None, None
+        return None, None, None, None
 
+    # Check if new coordinates exceed image dimensions
     if (x_new.max() >= hs_image_copy.shape[1]) or (y_new.max() >= hs_image_copy.shape[0]):
         x_ins = np.where((x_new < hs_image_copy.shape[1]) & (x_new > 0))[0]
         y_ins = np.where((y_new < hs_image_copy.shape[0]) & (y_new > 0))[0]
         ins_indices = np.array(list(set(x_ins) & set(y_ins)))
         y_new = y_new[ins_indices]
         x_new = x_new.squeeze()[ins_indices]
+        if quality_raster is not None:
+            quality_raster[y_new, x_new] = np.abs(pixel_values[ins_indices] - hs_image_copy[y_new, x_new])
         hs_image_copy[y_new, x_new] = pixel_values[ins_indices]
     else:
+        if quality_raster is not None:
+            quality_raster[y_new, x_new.squeeze()] = np.abs(pixel_values - hs_image_copy[y_new, x_new.squeeze()])
         hs_image_copy[y_new, x_new.squeeze()] = pixel_values
 
-    # perform a quick interpolation over nan values for swir
-    hs_image_copy[min_row:max_row + 1, min_col:max_col + 1] = replace_nan_values(hs_image_copy, min_row, max_row, min_col,
-                                                                                 max_col, y_new, x_new, method)
+    return hs_image_copy, x_new, y_new, quality_raster
 
-    return hs_image_copy, x_new, y_new
+def calculate_mi(hs_image_copy, mica_image, min_row, max_row, min_col, max_col):
+    """
+    Calculate mutual information between a hyperspectral image and a Mica image patch.
 
+    Parameters:
+    - hs_image_copy (numpy.ndarray): Copy of the hyperspectral image.
+    - mica_image (numpy.ndarray): Mica image.
+    - min_row (int): Minimum row index of the image patch.
+    - max_row (int): Maximum row index of the image patch.
+    - min_col (int): Minimum column index of the image patch.
+    - max_col (int): Maximum column index of the image patch.
 
-def calculate_mi(hs_image_copy,
-                             mica_image,
-                             min_row,
-                             max_row,
-                             min_col,
-                             max_col):
-    # calculate the quality metric
+    Returns:
+    - mi (float): Mutual information value.
+    """
+    # Extract patches from the hyperspectral and Mica images
     hs_patch = hs_image_copy[min_row:max_row + 1, min_col:max_col + 1]
-    hs_patch = to_uint8(hs_patch).astype(int)
     mica_patch = mica_image[min_row:max_row + 1, min_col:max_col + 1]
+
+    # Convert patches to uint8 and then to int for compatibility with mutual information calculation
+    hs_patch = to_uint8(hs_patch).astype(int)
     mica_patch = to_uint8(mica_patch).astype(int)
+
+    # Calculate mutual information between the patches
     mi = normalized_mutual_information(hs_patch, mica_patch)
     return mi
 
-def save_image_envi(new_hs_arr, old_hs_profile, hs_hdr_path, method):
-    hs_hdr_path_new = hs_hdr_path.replace(".hdr", f"_ss_{method}.hdr")
 
-    # replicating vnir metadata except the bands and wavelength
-    old_hs_profile["description"] = hs_hdr_path_new
-    envi.save_image(hs_hdr_path_new, new_hs_arr, metadata=old_hs_profile, force=True)
+def get_shift_from_mi(hs_image, mica_image, y_old, x_old, min_row, max_row, min_col, max_col, n=3):
+    """
+    Determine pixel shift from mutual information (MI) between a hyperspectral image and a Mica image.
 
-    print("image saved to: " + hs_hdr_path_new)
+    Parameters:
+    - hs_image (numpy.ndarray): Hyperspectral image.
+    - mica_image (numpy.ndarray): Mica image.
+    - y_old (array-like): Old y-coordinates of points.
+    - x_old (array-like): Old x-coordinates of points.
+    - min_row (int): Minimum row index of the image patch.
+    - max_row (int): Maximum row index of the image patch.
+    - min_col (int): Minimum column index of the image patch.
+    - max_col (int): Maximum column index of the image patch.
+    - n (int, optional): Number of pixel shifts to consider.
 
-def get_shift_from_mi(hs_image,
-                        mica_image,
-                        y_old, x_old,
-                        min_row, max_row,
-                        min_col, max_col,
-                        n = 3,
-                        method = "nearest"):
+    Returns:
+    - model (sklearn.linear_model): Best linear regression model.
+    - best_shift (int): Best pixel shift.
+    - max_mi_quality (float): Maximum mutual information quality metric.
+    """
+    mi_quality_metrics = []  # List to store MI quality metrics for different shifts
+    linear_models = []  # List to store linear regression models for different shifts
 
-    # run linear regression, passing Y and X
-    mi_quality_metrics = []
-    linear_models = []
-
-    # we might have points that are crap
-    if (len(x_old) < 2) or \
-            (len(y_old) < 2):
+    # Check if there are enough points for regression
+    if (len(x_old) < 2) or (len(y_old) < 2):
         return None, np.nan, np.nan
 
+    # Fit RANSAC regression model to find the best linear fit
     model = RANSACRegressor(LinearRegression(), max_trials=1000, residual_threshold=30).fit(x_old.reshape(-1, 1), y_old)
+
+    # Calculate MI before shifting
     mi_before = calculate_mi(hs_image, mica_image, min_row, max_row, min_col, max_col)
+
+    # Generate pixel shifts
     pixel_shifts = np.arange(-n, +n + 1)
-    for c, i in enumerate(pixel_shifts):
-        #taking out the pixels and
+
+    # Iterate over pixel shifts
+    for shift_value in pixel_shifts:
         hs_image_copy = copy.copy(hs_image)
 
-        hs_image_copy, x_new, y_new = shift_rows_from_model(hs_image_copy,
-                                                            model,
-                                                            x_old,
-                                                            y_old,
-                                                            min_row,
-                                                            max_row,
-                                                            min_col,
-                                                            max_col,
-                                                            i,
-                                                            method)
+        # Shift rows based on the regression model
+        hs_image_copy, x_new, y_new, _ = shift_rows_from_model(hs_image_copy, model, x_old, y_old, shift_value)
 
-        if (hs_image_copy is None) or \
-                (x_new is None) or\
-                (y_new is None):
+        if (hs_image_copy is None) or (x_new is None) or (y_new is None):
             linear_models.append(None)
             mi_quality_metrics.append(np.nan)
             continue
 
-        mi_after = calculate_mi(hs_image_copy,
-                                mica_image,
-                                min_row,
-                                max_row,
-                                min_col,
-                                max_col)
-        mi_quality_metric = (mi_after - mi_before) / (mi_before)
+        # Calculate MI after shifting
+        mi_after = calculate_mi(hs_image_copy, mica_image, min_row, max_row, min_col, max_col)
+
+        # Calculate MI quality metric
+        mi_quality_metric = (mi_after - mi_before) / mi_before
         mi_quality_metrics.append(mi_quality_metric)
         linear_models.append(model)
 
+    # Find the shift with the maximum MI quality metric
     if len(linear_models) > 0:
         argmax = np.argmax(mi_quality_metrics)
-        print(f"shift: {pixel_shifts[argmax]} pixels, score: {mi_quality_metrics[argmax]:.4f}")
         return linear_models[argmax], pixel_shifts[argmax], mi_quality_metrics[argmax]
     else:
         return None, np.nan, np.nan
 
-def main(hs_filename, mica_filename, method = "nearest", hs_type = "swir", ):
+def medfilt3d(hs_arr_copy, kernel_size=3):
+    hs_arr_final = []
+    for band in range(hs_arr_copy.shape[2]):
+        hs_arr_final.append(medfilt2d(hs_arr_copy[...,band], kernel_size=kernel_size)[...,None])
+    hs_arr_final = np.concatenate(hs_arr_final, 2)
+    return hs_arr_final
 
-    # # downsample both mica
-    # hs_filename = warp_to_scale(hs_filename, 0.5 )
-    # mica_filename =warp_to_scale(mica_filename, 0.5 )
+def main(hs_filename, mica_filename, pixel_shift = 3, kernel_size = 3, hs_type = "swir"):
 
     # load the hyperspectral and mica
     hs_arr, hs_profile = load_image_envi(hs_filename)
-    # hs_arr = hs_arr[...,:5]
     mica_arr, mica_profile = load_image_envi(mica_filename)
+
+    # grabbing georectified rows and the original array
     waterfall_rows = hs_arr[..., -2].squeeze()
     hs_arr_copy = copy.copy(hs_arr)
 
-    # grab a patch to calculate the highest coefficient bands
+    # grabbing the bands necessary to perform mutual information on
     if hs_type == "swir":
         hs_bands = np.arange(0,12)
     elif hs_type == "vnir":
@@ -321,11 +316,10 @@ def main(hs_filename, mica_filename, method = "nearest", hs_type = "swir", ):
     mica_image = mica_arr[..., -1].squeeze() # grabbing the last band in mica
 
     # setting up lists to save out the linear models for each row and the shift amount
+    quality_raster = np.zeros_like(hs_arr_copy)
     quality_metrics = []
-
     rows_values = np.arange(1, np.max(waterfall_rows) + 1)
     pbar = tqdm(total = np.max(waterfall_rows), position=0, leave=True)
-
     for row_value in rows_values:
 
         y_old, x_old = np.where(waterfall_rows == row_value)
@@ -339,123 +333,53 @@ def main(hs_filename, mica_filename, method = "nearest", hs_type = "swir", ):
                                                                 y_old, x_old,
                                                                 min_row, max_row,
                                                                 min_col, max_col,
-                                                                3,
-                                                                method)
+                                                                pixel_shift)
         quality_metrics.append(quality_metric)
 
         if linear_model is None:
             continue
 
         # suggested method at this stage is cubic
-        hs_arr_copy, _, _ = shift_rows_from_model(hs_arr_copy,
+        hs_arr_copy, _, _, quality_raster = shift_rows_from_model(hs_arr_copy,
                                                   linear_model,
                                                   x_old,
                                                   y_old,
-                                                  min_row,
-                                                  max_row,
-                                                  min_col,
-                                                  max_col,
                                                   shift,
-                                                  method)
+                                                  quality_raster)
 
         pbar.update(1)
 
     print(f"Overall relative improvement: {np.nansum(quality_metrics):.5f}.")
-    save_image_envi(hs_arr, hs_profile, hs_filename, method)
 
+    # pefroming median filtering to smooth out the old values
+    hs_arr_copy = medfilt3d(hs_arr_copy, kernel_size=kernel_size)
 
+    # need to change the metadata to fit the quality raster information and then save it
+    quality_raster_metadata = copy.copy(hs_profile)
+    quality_raster_metadata["bands"] = "1"
+    quality_raster_metadata["band names"] = "Error Band"
+    del quality_raster_metadata["wavelength"]
+    quality_raster = np.mean(quality_raster, axis = 2)
+    save_image_envi(quality_raster, quality_raster_metadata, hs_filename.replace(".hdr", "_QA.hdr"))
 
-def main_debug(hs_filename, mica_filename, method = "nearest", hs_type = "swir", ):
-
-    # # downsample both mica
-    # hs_filename = warp_to_scale(hs_filename, 0.5 )
-    # mica_filename =warp_to_scale(mica_filename, 0.5 )
-    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
-
-    # load the hyperspectral and mica
-    hs_arr, hs_profile = load_image_envi(hs_filename)
-    # hs_arr = hs_arr[...,:5]
-    mica_arr, mica_profile = load_image_envi(mica_filename)
-    waterfall_rows = hs_arr[..., -2].squeeze()
-    hs_arr_copy = copy.copy(hs_arr)
-    hs_arr_copy = np.mean(hs_arr_copy[..., np.arange(0,12)], axis=2)
-
-    # grab a patch to calculate the highest coefficient bands
-    if hs_type == "swir":
-        hs_bands = np.arange(0,12)
-    elif hs_type == "vnir":
-        #TODO: define what bands vnir is
-        hs_bands = np.arange(0, 12)
-
-    # grabbing the correspondiong image
-    hs_image = np.mean(hs_arr[..., hs_bands], axis=2)
-    mica_image = mica_arr[..., -1].squeeze() # grabbing the last band in mica
-
-    # setting up lists to save out the linear models for each row and the shift amount
-    quality_metrics = []
-
-    axs[0].imshow(hs_arr_copy, cmap='gray')
-    axs[0].set_title('Original')
-    im = axs[1].imshow(hs_arr_copy, cmap='gray')
-    axs[1].set_title('Modified')
-    axs[2].imshow(mica_image, cmap='gray')
-    axs[2].set_title('Original')
-    plt.show()
-
-    rows_values = np.arange(1, np.max(waterfall_rows) + 1)
-    pbar = tqdm(total = np.max(waterfall_rows), position=0, leave=True)
-    rows_values = rows_values[800:900]
-    for row_value in rows_values:
-
-        y_old, x_old = np.where(waterfall_rows == row_value)
-        mask_bool = waterfall_rows == row_value
-        rows, cols = np.where(mask_bool)
-        min_row, min_col = np.min(rows), np.min(cols)
-        max_row, max_col = np.max(rows), np.max(cols)
-
-        linear_model, shift, quality_metric = get_shift_from_mi(hs_image,
-                                                                mica_image,
-                                                                y_old, x_old,
-                                                                min_row, max_row,
-                                                                min_col, max_col,
-                                                                3,
-                                                                method)
-        quality_metrics.append(quality_metric)
-
-        if linear_model is None:
-            continue
-
-        # suggested method at this stage is cubic
-        hs_arr_copy, _, _ = shift_rows_from_model(hs_arr_copy,
-                                                  linear_model,
-                                                  x_old,
-                                                  y_old,
-                                                  min_row,
-                                                  max_row,
-                                                  min_col,
-                                                  max_col,
-                                                  shift,
-                                                  method)
-        im.set_data(hs_arr_copy)
-        # plt.pause(0.5)
-
-        pbar.update(1)
-
-    print(f"Overall relative improvement: {np.nansum(quality_metrics):.5f}.")
-    save_image_envi(hs_arr, hs_profile, hs_filename, method)
+    # saving the image
+    save_image_envi(hs_arr_copy, hs_profile, hs_filename.replace(".hdr", "_SS.hdr"))
 
 
 if __name__ == "__main__":
+    """
+    use environment py37
+    """
+    # parser = argparse.ArgumentParser(description='Process some integers.')
+    # parser.add_argument('hs_filename', type=str, help='hyperspectral hdr filename, the hyperspectral data MUST include georectified rows and indices using headwalls propietry software on last two bands!')
+    # parser.add_argument('mica_filename', type=str, help='Mica hdr filename, mica data MUST be downsamples and coregistrered using the coregister_controlpoints_gui.py code, otherwise this code will fail.')
+    # parser.add_argument('--pixel_shift', type=int, default=3, help='Number of pixels to shift')
+    # parser.add_argument('--kernel_size', type=int, default=3, help='Size of the kernel')
+    #
+    # args = parser.parse_args()
+    # main(args.swir_filename, args.mica_filename, pixel_shift=args.pixel_shift, kernel_size=args.kernel_size)
 
-    # todo: run ransac on each line which is not currently implemented
-    # todo: run the shift in pixels on the entire hyperspectral array
-    # todo: show the before and after in color
-    # todo: os picking correllation band problematic? SWIR 113 best with Mica 0
-    # todo: maybe 3 pixels left and right is not doing much
-
-
+    # debug
     mica_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/labspehre_data/1133/Micasense/NURI_micasense_1133_transparent_mosaic_stacked_warped_cropped.hdr"
     swir_filename = "/dirs/data/tirs/axhcis/Projects/NURI/Data/labspehre_data/1133/SWIR/raw_1504_nuc_or_plusindices3_warped.hdr"
-    main_debug(swir_filename, mica_filename, method = "cubic")
-
-
+    main(swir_filename, mica_filename, pixel_shift = 3, kernel_size=3)
