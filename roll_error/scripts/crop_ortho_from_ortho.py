@@ -31,18 +31,30 @@ def load_images_envi(mica_path, swir_path):
 
     swir_ds = envi.open(swir_path)
     swir_profile = swir_ds.metadata
-    swir_wavelengths = swir_profile["wavelength"]
-    swir_wavelengths = np.array([float(i) for i in swir_wavelengths])
+    try:
+        swir_wavelengths = swir_profile["wavelength"]
+        swir_wavelengths = np.array([float(i) for i in swir_wavelengths])
+    except:
+        swir_wavelengths = swir_profile["band names"]
+        swir_wavelengths = np.array([float(i.split(" ")[0]) for i in swir_wavelengths])
+
     swir_arr = swir_ds.load()
 
     return (mica_arr, mica_profile, mica_wavelengths ), (swir_arr, swir_profile, swir_wavelengths)
 
-def save_image_envi(mica_arr, mica_profile, mica_path, swir_profile):
+def save_image_envi(mica_arr, mica_profile, mica_path, swir_profile, name = None):
+
+    if name:
+        output_name = mica_path.replace(".hdr", f"_{name}.hdr")
+    else:
+        output_name = mica_path.replace(".hdr", "_cropped.hdr")
 
     # replicating swir metadata except for the extents
     mica_profile["map info"] = swir_profile["map info"]
-    envi.save_image(mica_path.replace(".hdr", "_cropped.hdr"), mica_arr, metadata=mica_profile, force=True)
-    print("image saved to: " + mica_path.replace(".hdr", "_cropped.hdr"))
+    envi.save_image(output_name, mica_arr, metadata=mica_profile, force=True)
+    print("image saved to: " + output_name)
+
+    return output_name
 
 def create_lat_lon_rasters(profile):
     # creating lat and lon rasters and then cropping them accordingly
@@ -56,7 +68,7 @@ def create_lat_lon_rasters(profile):
 
     return lon_raster, lat_raster
 
-def main(swir_hdr, mica_hdr):
+def main(swir_hdr, mica_hdr, name = None):
 
     # load images envi
     (mica_arr, mica_profile, mica_wavelengths),\
@@ -80,14 +92,13 @@ def main(swir_hdr, mica_hdr):
     mica_arr_cropped[swir_arr[...,0].squeeze() == 0] = 0
 
     # save out the new mica array based on the swir array
-    save_image_envi(mica_arr_cropped, mica_profile, mica_hdr, swir_profile)
+    output_hdr = save_image_envi(mica_arr_cropped, mica_profile, mica_hdr, swir_profile, name)
+
+    return output_hdr
 
 
 if __name__ == "__main__":
 
-    """
-    antspy has many more algorithms that the other ones.
-    """
     mica_hdr = "/Volumes/T7/axhcis/Projects/NURI/data/20210723_tait_labsphere/1133/Micasense/NURI_micasense_1133_transparent_mosaic_stacked_warped.hdr"
     swir_hdr = "/Volumes/T7/axhcis/Projects/NURI/data/20210723_tait_labsphere/1133/SWIR/raw_1504_nuc_or_plusindices3_warped.hdr"
     main(swir_hdr, mica_hdr)
